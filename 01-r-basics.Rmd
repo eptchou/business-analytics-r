@@ -1,0 +1,376 @@
+# R 基礎與資料處理 {#basics}
+
+```{r ch1-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE)
+```
+
+本章介紹 R 語言中最核心的**資料結構（data structures）**：向量、矩陣、陣列、串列、因子與資料框，並說明如何讀取、檢視與清理外部資料。這些是所有後續章節（探索式分析、迴歸、機器學習）的共同基礎。閱讀時，建議打開 RStudio，將每一段程式碼複製到主控台執行，觀察輸出是否與書中一致。
+
+R 的資料結構可依「維度」與「是否允許混合型別」大致區分如下：
+
+| 結構 | 維度 | 是否允許混合型別 | 典型用途 |
+|------|:----:|:----:|------|
+| 向量 Vector | 1 | 否 | 儲存同型別的一串數值或文字 |
+| 矩陣 Matrix | 2 | 否 | 數值運算、線性代數 |
+| 陣列 Array | n | 否 | 多維度數值資料 |
+| 串列 List | 1 | 是 | 打包不同型別、不同長度的物件 |
+| 資料框 Data Frame | 2 | 是（各欄同型別） | 統計分析最常用的表格資料 |
+
+## 向量 Vectors {#vectors}
+
+向量（vector）是 R 語言中最基本的資料結構，用來儲存**同一屬性**（同型別）的一串資料。最常見的建立方式是以函數 `c()`（combine 的縮寫）將多個元素合併在同一個向量中。
+
+### 建立數值向量
+
+```{r vec-num}
+a <- c(1, 3, 5, 7, 9, -10)
+a
+```
+
+**逐行說明：**
+
+* `a <- c(1, 3, 5, 7, 9, -10)`：`c()` 把六個數字合併成一個數值向量，`<-` 是 R 的指派運算子，把右側的向量存入名為 `a` 的物件。
+* `a`：單獨輸入物件名稱，等同於「印出它」。輸出開頭的 `[1]` 表示這一列的第一個元素是整個向量的第 1 個位置（當向量很長、換行時，每列開頭都會標示該列首元素的索引）。
+
+除了逐一列舉，連續整數可用冒號 `:` 快速產生：
+
+```{r vec-seq}
+a <- 10:20
+a
+```
+
+`10:20` 會產生從 10 到 20、間隔為 1 的整數向量，是 `seq(10, 20, by = 1)` 的簡寫。
+
+### 以索引（index）取用元素
+
+R 使用中括號 `[ ]` 來指定要取用的元素位置，且**索引從 1 開始**（不是 0）。
+
+```{r vec-index}
+a[c(2, 4)]
+```
+
+* 中括號內放入一個索引向量 `c(2, 4)`，代表同時取出第 2 個與第 4 個元素，即 `11` 與 `13`。
+
+### 以邏輯條件篩選
+
+中括號內也可以放入**邏輯向量（logical vector）**，`TRUE` 的位置會被保留，`FALSE` 的位置會被捨棄。這是 R 篩選資料最重要的技巧之一。
+
+```{r vec-logical}
+b <- c("one", "two", "three", "two")
+b == "two"
+b[b == "two"]
+
+tf <- b == "two"
+b[tf == TRUE]
+```
+
+**逐行說明：**
+
+* `b <- c("one", "two", "three", "two")`：建立一個**字元向量**（每個元素都是文字，需加引號）。
+* `b == "two"`：`==` 是「逐元素比較是否相等」，結果是一個與 `b` 等長的邏輯向量，只有等於 `"two"` 的位置為 `TRUE`。
+* `b[b == "two"]`：把上一步的邏輯向量放進中括號，於是只留下為 `TRUE` 的元素，得到兩個 `"two"`。
+* `tf <- b == "two"`：把邏輯結果先存成變數 `tf`，再以 `b[tf == TRUE]` 篩選，結果相同——這說明「先算條件、再用條件篩選」是可以拆成兩步的。
+
+### 修改向量中的值
+
+以中括號指定位置後，即可用 `<-` 覆寫該位置的值：
+
+```{r vec-replace}
+a[3] <- 2 * a[3]
+a
+```
+
+* `a[3]` 原本是 `12`（承接前面的 `a <- 10:20`），`2 * a[3]` 把它乘以 2 得到 24，再指派回第 3 個位置，因此只有第 3 個元素改變。
+
+## 矩陣 Matrices {#matrices}
+
+矩陣（matrix）是**二維、同型別**的資料結構，常用於數值運算與線性代數。以 `matrix()` 建立，並以 `nrow`、`ncol` 指定列數與行數。
+
+```{r mat-create}
+M <- matrix(c('a','b','c','d','e','f'), nrow = 3, ncol = 2)
+M
+```
+
+**逐行說明：**
+
+* `matrix(...)` 的第一個引數是要填入的資料向量；`nrow = 3, ncol = 2` 指定排成 3 列 2 行。
+* R **預設「逐行（by column）」填值**：先填滿第一行（a、b、c），再填第二行（d、e、f）。輸出中的 `[,1]`、`[,2]` 是行標籤，`[1,]`、`[2,]` 是列標籤。
+
+也可以先建立一個全為 0 的矩陣，之後再填入內容：
+
+```{r mat-zero}
+sample <- matrix(0, 3, 5)
+sample
+sample <- matrix(c(1:6), 2, 3)
+sample
+```
+
+* `matrix(0, 3, 5)`：第二、三個引數依序對應 `nrow` 與 `ncol`，故產生 3×5 的零矩陣。
+* `matrix(c(1:6), 2, 3)`：把 1 到 6 排成 2×3；注意仍是逐行填入，所以第一行是 1、2，第二行是 3、4。
+
+若希望**逐列（by row）**填值，加上 `byrow = TRUE`：
+
+```{r mat-byrow}
+M <- matrix(c('a','a','b','c','b','a'), nrow = 2, ncol = 3, byrow = TRUE)
+M
+```
+
+### 陣列 Array
+
+若要儲存**多個維度**的資料，可使用陣列（array）。下列程式碼建立一個包含 2 個 3×3 矩陣的三維陣列：
+
+```{r arr-create}
+a <- array(c('green', 'yellow'), dim = c(3, 3, 2))
+a
+```
+
+* `dim = c(3, 3, 2)` 指定三個維度：3 列、3 行、2 層。
+* 資料向量 `c('green', 'yellow')` 長度不足時會**自動循環（recycling）**填滿整個陣列，因此每格交替出現 green 與 yellow。
+
+### 矩陣運算
+
+矩陣常見運算整理如下：
+
+* `A * B`：矩陣 A 與 B 的元素**兩兩相乘**（Hadamard 乘積）。
+* `A %*% B`：**矩陣乘法** $A \cdot B$。
+* `t(A)`：轉置矩陣 $A^{T}$。
+* `solve(A)`：A 的反矩陣 $A^{-1}$。
+* `solve(A, b)`：求解線性方程組 $Ax = b$，得到 $x = A^{-1}b$。
+
+```{r mat-algebra1}
+A <- matrix(c(1, 2, 3, 4), nrow = 2, ncol = 2)
+B <- matrix(c(1, 1, 2, 2), nrow = 2, ncol = 2)
+A
+B
+```
+
+```{r mat-algebra2}
+A * B
+A %*% B
+```
+
+**逐行說明：**
+
+* `A * B` 是逐格相乘：左上角 `1*1 = 1`、右上角 `3*2 = 6`，依此類推。
+* `A %*% B` 才是線性代數的矩陣乘法：第一列第一行 `= 1*1 + 3*1 = 4`、第一列第二行 `= 1*2 + 3*2 = 8`；兩者結果不同，初學者最容易混淆，務必分清楚。
+
+```{r mat-algebra3}
+t(A)
+solve(A)
+```
+
+* `t(A)` 把 A 的列與行互換。
+* `solve(A)` 回傳反矩陣；可驗證 `A %*% solve(A)` 會得到單位矩陣。
+
+```{r mat-solve}
+b <- c(1, 1)
+solve(A, b)
+solve(A) %*% b
+```
+
+* `solve(A, b)` 直接解出方程組 $Ax=b$ 的答案，數值上等同於「反矩陣乘以 b」。在實務中**建議使用 `solve(A, b)` 而非 `solve(A) %*% b`**，前者數值上更穩定、也更有效率。
+
+## 串列 Lists {#lists}
+
+串列（list）是 R 中最有彈性的結構：它可以同時包含**不同型別、不同長度**的物件，甚至是一個函數。許多統計模型（如 `lm()`）的回傳結果，本質上就是一個串列。
+
+```{r list-create}
+list1 <- list(c(2, 5, 3), 21.3, mean)
+list1
+```
+
+* 這個串列有三個元素：一個數值向量、一個純量，以及**函數 `mean` 本身**。這說明在 R 裡函數也是可以被存放、傳遞的物件。
+
+為了方便日後取用，建議在建立時就替各元素**命名**：
+
+```{r list-named}
+list2 <- list(vector = c(2, 5, 3),
+              number = 21.3,
+              func   = mean)
+list2
+names(list2)
+```
+
+* 命名後可用 `list2$vector` 或 `list2[["vector"]]` 取出對應元素；`names(list2)` 會列出所有元素的名稱。
+
+## 因子 Factors {#factors}
+
+因子（factor）是 R 儲存**類別資料（categorical data）**的專用方式，外觀像向量，但內部會記錄有哪些「水準（levels）」。在迴歸、繪圖與統計檢定中，把類別變數正確設為因子非常重要。
+
+```{r factor-create}
+department <- c('IntBus','Banking','Statistics','Statistics','IntBus','BusAdm','Statistics')
+factor_dep <- factor(department)
+factor_dep
+nlevels(factor_dep)
+```
+
+**逐行說明：**
+
+* `factor(department)` 把字元向量轉成因子；R 會自動找出所有不重複的值作為 levels，並**依字母順序**排列。
+* `nlevels()` 回傳水準的個數。此例雖有 7 筆資料，但只有 4 個不同的科系，故為 4。
+
+有時某些類別在資料中沒出現，但我們仍希望保留它們（例如問卷選項）。此時可手動指定 `levels`，並以 `labels` 給予簡稱：
+
+```{r factor-levels}
+factor_com <- factor(department,
+                     levels = c("IntBus","Banking","Account","Statistics",
+                                "BusAdm","ManInfoSys","Finance","RiskMan"))
+nlevels(factor_com)
+
+factor(department,
+       levels = c("IntBus","Banking","Account","Statistics",
+                  "BusAdm","ManInfoSys","Finance","RiskMan"),
+       labels = c("IB","Bank","ACC","Stat","BA","MIS","Fin","RM"))
+```
+
+* 指定完整 `levels` 後，即使 `Account`、`Finance` 等未出現在資料中，仍被保留為合法水準（`nlevels` 為 8）。
+* `labels` 依 `levels` 的順序一一對應，將顯示的標籤換成縮寫，但資料的分類意義不變。
+
+## 資料框 Data Frames {#dataframe}
+
+在 R 進行資料分析時，**資料框（data frame）**是最常見、也最重要的資料型態。它是一張二維表格，滿足兩個原則：
+
+* **列（Rows）**：通常代表個體（individuals）或觀察值（observations）。
+* **行（Columns）**：通常代表變數（variables），同一行的型別一致，不同行可以是不同型別。
+
+```{r df-create1}
+name   <- c("Alex", "Bill", "Cathy", "Dora")
+age    <- c("20", "23", "22", "19")
+gender <- c("Male", "Male", "Female", "Female")
+
+data1 <- data.frame(name, age, gender)
+data1
+```
+
+* 先分別建立三個等長的向量，再以 `data.frame()` 把它們併成表格；每個向量成為一個欄位（變數），變數名稱即向量名稱。
+
+也可以在 `data.frame()` 內**直接命名並給值**，程式碼更緊湊：
+
+```{r df-create2}
+data2 <- data.frame(
+  name   = c("Alex", "Bill", "Cathy", "Dora"),
+  age    = c("20", "23", "22", "19"),
+  gender = c("Male", "Male", "Female", "Female")
+)
+data2
+```
+
+### 檢視資料框的常用函數
+
+拿到一份新資料時，第一步通常是「看看它長什麼樣子」。下列函數是日常分析的必備工具：
+
+* `head()`：取得前六筆資料（預設 6 筆）。
+* `colnames()` / `names()`：查詢或修改欄位名稱。
+* `rownames()`：設定列的名稱。
+* `summary()`：顯示各變數的基本統計摘要。
+* `str()`：輸出物件的內部結構（型別、維度、前幾筆值）。
+* `class()`：查詢物件屬於哪種資料結構。
+* `length()`、`unique()`：元素個數、不重複元素。
+
+```{r df-inspect}
+head(data2)
+str(data2)
+class(data2)
+names(data2)
+```
+
+> **常見陷阱**：此例中的 `age` 因為輸入時加了引號，被存成**字元（chr）**而非數值。`str()` 是最快發現這類型別問題的方法——若接著要對 age 做平均，必須先用 `as.numeric()` 轉型。
+
+欄名與列名都可以事後修改：
+
+```{r df-rename}
+colnames(data2) <- c("Var_1", "Var_2", "Var_3")
+rownames(data2) <- c("a", "b", "c", "d")
+data2
+```
+
+`length()` 與 `unique()` 在檢查資料重複值時特別實用：
+
+```{r df-unique}
+x <- c(1, 2, 2, 2, 3, 4, 4, 4, 4)
+length(x)
+unique(x)
+```
+
+* `length(x)` 回傳元素總數 9；`unique(x)` 只保留不重複的值，可用來快速掌握一個變數有哪些類別。
+
+## 讀取與匯出外部資料 {#io}
+
+真實分析的資料多半來自外部檔案。第一步通常是設定**工作目錄（working directory）**，讓 R 知道去哪裡找檔案：
+
+```{r wd, eval=FALSE}
+getwd()                                  # 查詢目前的工作目錄
+setwd("C:\\Program Files\\R\\working")   # 設定工作目錄（Windows 路徑用雙反斜線）
+```
+
+常用的讀取與匯出函數：
+
+```{r io-funcs, eval=FALSE}
+# 讀取
+read.table("data.txt", header = TRUE)          # 以空白或 Tab 分隔的純文字檔
+read.csv("data.csv")                            # 以逗號分隔的 CSV 檔
+
+# 匯出
+write.csv(df, "df.csv", row.names = FALSE)      # 匯出成 CSV
+write.table(df, "df.txt", quote = FALSE, sep = "\t")  # 匯出成 Tab 分隔文字檔
+```
+
+* `header = TRUE` 表示檔案第一列是欄位名稱。
+* CSV（comma-separated values）以逗號分隔，是最通用的交換格式，因此 `read.csv()` 最常使用。
+* 匯出時常加 `row.names = FALSE`，避免把 R 自動產生的列編號一併寫入檔案。
+
+讀入後，先用下列函數做初步檢視與摘要：`head()`、`tail()`（前／後 6 筆）、`str()`、`summary()`、`dim()`（列數與行數）、以及 `table()`、`mean()`、`range()`、`var()`、`sd()`、`quantile()` 等統計函數。
+
+## 缺失值 Missing Values 的處理 {#missing}
+
+真實資料幾乎一定有**缺失值**，在 R 中以 `NA`（Not Available）表示。缺失值的辨識與處理是資料清理的關鍵一步。
+
+```{r na-handle}
+data <- c(12, 4, 6, NA, 45, NA, 99)
+
+is.na(data)          # 每個元素是否為 NA
+which(is.na(data))   # NA 出現在第幾個位置
+sum(is.na(data))     # 總共有幾個 NA
+mean(data)           # 含 NA 時無法計算，回傳 NA
+mean(data, na.rm = TRUE)  # 先移除 NA 再計算平均
+```
+
+**逐行說明：**
+
+* `is.na(data)`：回傳與資料等長的邏輯向量，`TRUE` 代表該位置是 `NA`。
+* `which(is.na(data))`：把 `TRUE` 的**位置索引**取出，得知 NA 在第 4、第 6 個。
+* `sum(is.na(data))`：邏輯值 `TRUE` 在加總時視為 1，故可直接數出 NA 的個數。
+* `mean(data)`：只要有一個 `NA`，預設結果就是 `NA`——這是 R 的保護機制，提醒你資料不完整。
+* `mean(data, na.rm = TRUE)`：加上 `na.rm = TRUE`（remove NA）後，先剔除缺失值再計算，得到 33.2。
+
+常見的缺失值處理策略是「以平均數填補（imputation）」或「將異常值標記為 NA」：
+
+```{r na-impute}
+data[is.na(data)] <- mean(data, na.rm = TRUE)  # 用平均數填補 NA
+data
+data[data == 99] <- NA                          # 把離群的 99 標記為 NA
+data
+```
+
+* `data[is.na(data)] <- mean(data, na.rm = TRUE)`：左側用邏輯索引選出所有 NA 的位置，右側算出非缺失值的平均，一次把所有 NA 換成平均值。
+* `data[data == 99] <- NA`：反向操作——把數值 99（可能是感測器錯誤或編碼上的遺漏值）改標記為 `NA`，方便後續統一處理。
+
+若要一次刪除含缺失值的整列，可用：`na.omit(data)`（移除所有含 NA 的列），或 `data[!complete.cases(data), ]`（列出哪些列有缺失值）。
+
+## 小結 {#ch1-summary}
+
+本章介紹了 R 的六種核心資料結構，重點回顧如下：
+
+* **向量**是最基本的一維同型別結構；中括號 `[ ]` 搭配**數值索引**或**邏輯條件**是取值與篩選的核心技巧。
+* **矩陣／陣列**用於數值與線性代數運算；務必分清 `*`（逐格相乘）與 `%*%`（矩陣乘法）。
+* **串列**能打包不同型別的物件，是統計模型輸出的底層結構。
+* **因子**是類別資料的正確表示法，注意 `levels` 與 `labels` 的差異。
+* **資料框**是統計分析的主力表格；拿到資料先用 `str()`、`summary()` 檢查型別與分佈。
+* **缺失值** `NA` 需明確辨識（`is.na`）與處理（`na.rm`、填補、或 `na.omit`）。
+
+## 課後練習 {#ch1-exercises}
+
+1. 建立一個由 1 到 100 的整數向量，取出其中所有**偶數**（提示：善用 `%%` 取餘數與邏輯索引）。
+2. 建立一個 3×3 矩陣 `A`，驗證 `A %*% solve(A)` 是否等於單位矩陣，並說明為何結果可能出現極小的浮點誤差。
+3. 將前一節的 `data2` 資料框中的 `age` 欄位轉為數值型別，並計算平均年齡。
+4. 給定向量 `v <- c(3, NA, 7, NA, 10)`，分別以「平均數填補」與「刪除缺失值」兩種方式處理，並比較兩者所得的平均數。

@@ -1,0 +1,285 @@
+# 資料轉換與整理：tidyverse {#tidyverse}
+
+```{r ch2-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+真實世界的分析，八成的時間花在「把資料整理成可分析的樣子」。**tidyverse** 是由 Hadley Wickham 主導、一組設計哲學一致的 R 套件集合，專門處理資料的**轉換（transformation）**、**整理（tidying）**與**視覺化（visualization）**。本章聚焦兩個核心套件：`dplyr`（資料操作）與 `tidyr`（資料結構重塑）。
+
+載入 tidyverse 會一次載入下列核心套件：`ggplot2`（視覺化）、`dplyr`（資料轉換與彙總）、`tidyr`（資料整形）、`readr`（資料匯入）、`purrr`（函數式程式設計）、`tibble`（現代版資料框）。
+
+```{r load-tidyverse}
+# install.packages("tidyverse")   # 只需執行一次
+library(tidyverse)
+```
+
+## 管線運算子 `%>%` {#pipe}
+
+tidyverse 的靈魂是**管線（pipe）運算子** `%>%`（R 4.1 之後也可用原生的 `|>`）。它把左邊的結果，當成右邊函數的第一個引數傳進去，讓一連串操作可以「由上而下」讀，像讀句子一樣。
+
+先看沒有管線的傳統寫法：
+
+```{r pipe-before}
+set.seed(1)          # 固定亂數種子，讓結果可重現
+x <- rnorm(100)      # 產生 100 個標準常態隨機數
+y <- abs(x)          # 取絕對值
+hist(y)              # 畫直方圖
+```
+
+同樣的事情，用管線一氣呵成：
+
+```{r pipe-after, eval=FALSE}
+rnorm(100) %>%
+  abs() %>%
+  hist()
+```
+
+**逐行說明：**
+
+* `rnorm(100)`：產生 100 個隨機數，結果往下傳。
+* `%>% abs()`：把上一步的向量當成 `abs()` 的輸入，取絕對值。
+* `%>% hist()`：再把絕對值向量丟給 `hist()` 畫圖。
+
+管線的好處是**不必建立一堆中間變數**（x、y），程式碼的閱讀順序就是資料的處理順序。
+
+## `dplyr`：資料操作的六個動詞 {#dplyr}
+
+`dplyr` 把資料操作歸納成幾個「動詞」，每個動詞做一件事，再用管線串起來：
+
+| 函數 | 作用 |
+|------|------|
+| `filter()` | 依**條件篩選列**（rows/觀察值） |
+| `select()` | **挑選欄位**（columns/變數） |
+| `mutate()` | **新增**衍生欄位 |
+| `group_by()` | 建立**分組**，供後續彙總使用（`ungroup()` 解除） |
+| `summarise()` | 對欄位做**摘要統計**（也可拼作 `summarize()`） |
+| `arrange()` | 依欄位**排序** |
+| `tally()` / `count()` | **計數** |
+
+以一份汽車銷售資料 `mydata`（物件存於 `carsale.Rda`）為例：
+
+```{r car-load, eval=FALSE}
+# setwd("~/Documents/BA R application")   # 先設定工作目錄到資料所在處
+load("carsale.Rda")     # 載入後會出現名為 mydata 的資料框
+```
+
+```{r car-glimpse, eval=FALSE}
+mydata %>% dim()        # 幾列幾欄
+mydata %>% summary()    # 各變數摘要
+mydata %>% str()        # 內部結構
+```
+
+### 篩選與挑選：`filter()`、`select()`
+
+```{r dplyr-filter, eval=FALSE}
+mydata %>%
+  filter(price >= 15000 & maker == "toyota")   # 同時滿足兩條件的列
+
+mydata %>%
+  select(maker, year)                           # 只保留 maker 與 year 兩欄
+
+mydata %>%
+  select(type, price, everything()) %>%         # 把 type、price 移到最前，其餘照舊
+  head()
+```
+
+* `filter()` 內以邏輯運算式指定保留哪些**列**；`&` 表示「且」，`|` 表示「或」。
+* `select()` 內列出要保留的**欄位名稱**；`everything()` 是輔助函數，代表「所有其餘欄位」，常用來調整欄位順序。
+
+### 分組彙總：`group_by()` + `summarise()`
+
+「先分組、再彙總」是資料分析最常見的模式，例如「每個廠牌的平均價格」：
+
+```{r dplyr-group, eval=FALSE}
+mydata %>%
+  summarise(mean(price, na.rm = TRUE))          # 全體平均價
+
+mydata %>%
+  group_by(maker) %>%                            # 依廠牌分組
+  summarise(count    = n(),                      # 每組筆數
+            avg_price = mean(price, na.rm = TRUE))# 每組平均價
+```
+
+**逐行說明：**
+
+* `group_by(maker)`：把資料依 `maker` 切成數個群組，但外觀不變，只是替後續動作打上「分組」標記。
+* `summarise()`：對**每一組**各算一個摘要值。`n()` 回傳該組筆數；`mean(price, na.rm = TRUE)` 算平均並忽略缺值。
+* 結果是「一組一列」的精簡表格。
+
+### 新增變數、排序與計數
+
+```{r dplyr-mutate, eval=FALSE}
+mydata %>%
+  mutate(new_price = price * 0.5)                # 新增打五折的欄位
+
+mydata %>%
+  arrange(price)                                 # 依價格由小到大
+mydata %>%
+  arrange(desc(price))                           # 由大到小
+
+mydata %>%
+  filter(price >= 15000 & maker == "toyota") %>%
+  tally()                                         # 符合條件者有幾筆
+
+mydata %>% sample_frac(0.002)                    # 依比例隨機抽樣
+mydata %>% sample_n(5)                            # 依筆數隨機抽樣
+```
+
+* `mutate()` 保留原欄位並**加上**新算出來的欄位。
+* `arrange()` 預設遞增；包上 `desc()` 改為遞減。
+* `tally()`（或 `count()`）用來數列數，常接在 `filter()` 或 `group_by()` 之後。
+
+## `tidyr`：整齊資料與結構重塑 {#tidyr}
+
+### 什麼是「整齊資料」（tidy data）
+
+一份整齊的資料集需滿足三個條件：**每一列是一個觀察值、每一欄是一個變數、每一格是一個值**。整齊之後，dplyr 與 ggplot2 才能順暢運作。
+
+`tidyr` 提供四個重塑函數（新版另有等效的 `pivot_longer()`／`pivot_wider()`）：
+
+| 函數 | 作用 |
+|------|------|
+| `gather()` / `pivot_longer()` | 把多欄「攤長」成 key–value 兩欄 |
+| `spread()` / `pivot_wider()` | 把 key–value 兩欄「攤寬」成多欄 |
+| `separate()` | 一欄拆成多欄 |
+| `unite()` | 多欄合併成一欄 |
+
+套件內建的 `table1`～`table5` 是同一份資料的不同排列，最適合示範。`table1` 就是整齊的：
+
+```{r tidyr-table1, eval=FALSE}
+table1
+```
+
+### `spread()`：把擠在一欄的變數攤開
+
+`table2` 把 `cases`（病例數）與 `population`（人口）兩個變數，硬塞進同一個 `type` 欄，不整齊。`spread()` 依 `key` 欄的值，展開成新欄：
+
+```{r tidyr-spread, eval=FALSE}
+table2 %>% spread(key = type, value = count)
+```
+
+* `key = type`：`type` 欄裡的每個類別（cases、population）會變成新的欄名。
+* `value = count`：新欄裡要填入的值來自 `count` 欄。
+
+### `separate()`：一欄拆多欄
+
+`table3` 的 `rate` 欄長得像 `"745/19987071"`，其實混了兩個變數。`separate()` 依分隔符號拆開：
+
+```{r tidyr-separate, eval=FALSE}
+table3 %>%
+  separate(rate, into = c("cases", "population"), sep = "/", convert = TRUE)
+```
+
+* `into = c("cases","population")`：拆完後兩個新欄的名稱。
+* `sep = "/"`：以斜線為分隔符（可用正規表達式）。
+* `convert = TRUE`：自動把拆出來的字串轉成數值，否則會停留在文字型別。
+
+### `gather()`：欄名其實是資料
+
+`table4a` 的欄名 `1999`、`2000` 其實是「年份」這個變數的值，被誤用成欄名。`gather()` 把它們收攏：
+
+```{r tidyr-gather, eval=FALSE}
+tidy4a <- table4a %>% gather(key = "year", value = "cases", `1999`:`2000`)
+```
+
+* `key = "year"`：被攤下來的欄名（1999、2000）集中存到新欄 `year`。
+* `value = "cases"`：原本格子裡的數值集中存到新欄 `cases`。
+* `` `1999`:`2000` ``：指定要收攏的欄位範圍（欄名為數字時需用反引號括住）。
+
+### `unite()`：多欄併一欄
+
+`table5` 把年份拆成 `century`（世紀）與 `year`（年）兩欄，`unite()` 可合回：
+
+```{r tidyr-unite, eval=FALSE}
+table5 %>%
+  unite(Year, century, year, sep = "") %>%
+  separate(rate, into = c("cases", "population"), sep = "/", convert = TRUE)
+```
+
+* `unite(Year, century, year, sep="")`：把 `century` 與 `year` 黏成新欄 `Year`，中間不加分隔符。
+
+## 合併資料表：join {#joins}
+
+分析常需把分散在多張表的資訊拼起來，這就是關聯式資料庫的 **join**。`dplyr` 提供 `inner_join()`、`left_join()`、`right_join()`、`full_join()`：
+
+```{r joins, eval=FALSE}
+student %>% inner_join(moodle)                # 只保留兩表都有的鍵值
+student %>% full_join(moodle)                 # 兩表所有鍵值都保留（缺的補 NA）
+student %>% left_join(moodle, by = "moodle_id") # 以左表為主，指定用哪個鍵欄配對
+```
+
+* `inner_join`：交集，只留兩邊都對得上的列。
+* `left_join`：保留左表全部，右表對不上的補 `NA`（分析中最常用）。
+* `by = "moodle_id"`：當兩表有多個同名欄時，明確指定用哪一欄當配對鍵。
+
+## 課堂實作：`lec2.R` {#ch2-lab}
+
+課堂操作檔以汽車銷售資料 `mydata` 練習 dplyr，並用 `nycflights13` 的航班資料做綜合演練。以下逐段說明關鍵程式。
+
+### 先做出一份較小的子集再練習
+
+```{r lab2-subset, eval=FALSE}
+mydata2 <- mydata %>%
+  filter(!is.na(price),
+         maker == "volvo" | maker == "tesla" | maker == "lexus") %>%
+  select(maker, price, year, type)
+```
+
+* `!is.na(price)`：先剔除價格為缺值的列（`!` 是「非」）。
+* `maker == "volvo" | ... | ...`：只留三個廠牌，`|` 為「或」。
+* 最後 `select()` 留下四個要用的欄位，存成較小的 `mydata2` 方便操作。
+
+### 一次算多個摘要統計
+
+```{r lab2-summ, eval=FALSE}
+mydata2 %>%
+  group_by(maker) %>%
+  summarise(count     = n(),
+            avg_price = mean(price),
+            avg_year  = mean(year[price > 10000]),  # 只對高價車算平均年份
+            sd_price  = sd(price))
+```
+
+* `summarise()` 內可同時定義多個摘要欄位。
+* `year[price > 10000]`：在彙總函數裡也能用邏輯索引，只挑價格大於一萬的列來平均——展現 R 向量化的威力。
+
+### 綜合演練：`nycflights13` 航班資料
+
+```{r lab2-flights, eval=FALSE}
+library(nycflights13)
+
+# 1. 篩四個目的地、挑欄位、再排序
+flights %>%
+  filter(dest %in% c("LAX", "SFO", "ORD", "LGB")) %>%
+  select(year, month, day, arr_delay, origin, dest, dep_time) %>%
+  arrange(year, month, day, arr_delay)
+
+# 2. 每個 (起點, 終點) 組合出現幾次
+flights %>% count(origin, dest, sort = TRUE)
+
+# 3. 新增速度欄、把 year 改名為 YEAR
+flights2 <- flights %>%
+  mutate(speed = distance / air_time * 60) %>%
+  rename(YEAR = year)
+
+# 4. 每月平均速度與筆數
+flights2 %>%
+  group_by(month) %>%
+  summarise(avg_speed = mean(speed, na.rm = TRUE),
+            n = n())
+```
+
+* `dest %in% c(...)`：`%in%` 判斷值是否落在集合中，比一連串 `|` 更簡潔。
+* `count(origin, dest, sort = TRUE)`：等同 `group_by() %>% tally()`，並依次數由大到小排序。
+* `rename(YEAR = year)`：把欄位 `year` 改名為 `YEAR`（新名在左、舊名在右）。
+
+## 小結 {#ch2-summary}
+
+本章的核心觀念：把資料分析拆成一連串小動作，用管線 `%>%` 串起來。`dplyr` 的 `filter`／`select`／`mutate`／`group_by`／`summarise`／`arrange` 六個動詞處理**轉換**；`tidyr` 的 `gather`／`spread`／`separate`／`unite`（或 `pivot_longer`／`pivot_wider`）處理**結構重塑**；`join` 系列負責**合併多表**。掌握「整齊資料」的三原則，是後續視覺化與建模順暢與否的關鍵。
+
+## 課後練習 {#ch2-exercises}
+
+1. 以 `nycflights13::flights` 找出**平均起飛延誤最嚴重的前 5 個目的地**（提示：`group_by(dest)` 後 `summarise` 再 `arrange(desc(...))`）。
+2. 承上，計算每個 `origin`（起點機場）每月的航班數，並用 `pivot_wider()` 把「月份」攤成欄位，做成一張起點 × 月份的表。
+3. 用 `separate()` 將一欄日期字串 `"2024-03-15"` 拆成年、月、日三欄，再用 `unite()` 合回。
+4. 說明 `left_join()` 與 `inner_join()` 在「右表缺少部分鍵值」時，結果列數有何差異。

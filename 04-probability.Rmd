@@ -1,0 +1,120 @@
+# 機率分配 {#probability}
+
+```{r ch4-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+統計推論建立在機率分配之上。R 對每一種分配都提供一組**四個前綴**的函數，形成一致的命名規則，學會一個就會全部。本章以**二項分配**與**常態分配**為例說明。
+
+## 四個前綴：d / p / q / r {#four-prefix}
+
+對任一分配 `xxx`（如 `binom`、`norm`、`pois`、`t`、`chisq`），R 都有四個函數：
+
+| 前綴 | 用途 | 二項 | 常態 |
+|------|------|------|------|
+| `d`xxx | 密度／機率質量（PMF/PDF 的高度） | `dbinom(k, n, p)` | `dnorm(x, mean, sd)` |
+| `p`xxx | 累積機率 $P(X \le x)$ | `pbinom(k, n, p)` | `pnorm(q, mean, sd)` |
+| `q`xxx | 分位數（由累積機率反推 x） | `qbinom(prob, n, p)` | `qnorm(prob, mean, sd)` |
+| `r`xxx | 產生隨機亂數 | `rbinom(N, n, p)` | `rnorm(N, mean, sd)` |
+
+記法：**d** = density、**p** = probability（cumulative）、**q** = quantile、**r** = random。
+
+幾個具體例子（二項 $n=5, p=0.25$）：
+
+| 指令 | 意義 | 結果 |
+|------|------|------|
+| `dbinom(2, 5, 0.25)` | 5 次試驗恰好 2 次成功的機率 | 0.263 |
+| `pbinom(2, 5, 0.25)` | 5 次試驗至多 2 次成功的機率 | 0.896 |
+| `qbinom(0.896, 5, 0.25)` | 使 $F(x)\ge 0.896$ 的最小 x | 2 |
+| `rbinom(2, 5, 0.25)` | 從此分配抽 2 個隨機值 | 例如 {2, 1} |
+
+## 二項分配 {#binomial}
+
+### 用 `dbinom()` 取得 PMF 並視覺化
+
+```{r binom-pmf}
+p <- 0.25; n <- 10
+
+barplot(dbinom(0:10, n, p),
+        xlab = "# of success", ylab = "Probability")
+```
+
+**逐行說明：**
+
+* `dbinom(0:10, n, p)`：一次算出「成功 0 次、1 次、……、10 次」的機率，回傳長度 11 的向量。
+* `barplot(...)`：把這 11 個機率畫成長條圖，即二項分配 $X\sim B(10,0.25)$ 的機率質量函數（PMF）。
+
+### 用 ggplot2 畫更精緻的 PMF
+
+```{r binom-ggplot, eval=FALSE}
+library(tidyverse)
+
+data.pmf <- tibble(k = 0:n, prob = map_dbl(0:n, dbinom, n, p))
+
+ggplot(data.pmf, aes(x = k, y = prob)) +
+  geom_bar(stat = "identity") +
+  ggtitle("PMF for X~B(10, 0.25)") +
+  xlab("number of success") + ylab("Probability")
+```
+
+* `map_dbl(0:n, dbinom, n, p)`：`purrr` 的 `map_dbl` 把 `dbinom` 逐一套用到 0~n，回傳數值向量（等同 `sapply` 但保證回傳 double）。
+* `geom_bar(stat = "identity")`：`stat="identity"` 表示「直接用資料裡的 y 值當長條高度」，不要 ggplot 幫我們計數。
+
+### 用亂數畫 CDF
+
+```{r binom-cdf, eval=FALSE}
+data.cdf <- tibble(x = rbinom(5000, 10, 0.25))   # 先從分配抽 5000 個值
+
+ggplot(data.cdf, aes(x = x)) +
+  stat_ecdf() +                                   # 經驗累積分配函數
+  ggtitle("CDF for X~B(10, 0.25)")
+```
+
+* 這裡示範一種「以模擬逼近理論」的思路：先用 `rbinom()` 抽大量樣本，再用 `stat_ecdf()` 畫**經驗累積分配**，樣本夠大時會逼近真正的 CDF。
+
+## 常態分配 {#normal}
+
+### 尾端機率與臨界值
+
+```{r normal-tail}
+pnorm(1.96, lower.tail = FALSE)   # P(Z > 1.96)，1.96 右尾面積
+qnorm(0.05, lower.tail = FALSE)   # 右尾 0.05 對應的臨界值（約 1.645）
+```
+
+* `lower.tail = FALSE` 表示計算**右尾**（大於）方向；預設 `TRUE` 是左尾（小於等於）。
+* `pnorm` 給機率、`qnorm` 給臨界值，兩者互為反函數——這正是查標準常態表在做的事。
+
+### 視覺化 PDF 與 CDF
+
+```{r normal-pdf, eval=FALSE}
+# X ~ N(mean = 2, variance = 4)，故 sd = sqrt(4) = 2
+range.pdf <- tibble(x = c(2 - 6, 2 + 6))          # 以平均 ±3 個標準差為範圍
+
+ggplot(range.pdf, aes(x = x)) +
+  stat_function(fun = dnorm, args = list(mean = 2, sd = sqrt(4))) +
+  ggtitle("PDF for X~N(2, 4)")
+```
+
+* `stat_function(fun = dnorm, args = list(...))`：直接畫出**理論密度曲線**，`args` 傳入分配參數。範圍取平均 ±3 個標準差通常足以涵蓋幾乎所有機率。
+
+### 直方圖與核密度估計
+
+```{r normal-density}
+x <- rnorm(10000, 2, 4)   # 從 N(2, sd=4) 抽一萬個值
+
+hist(x)                   # 直方圖：看樣本分佈形狀
+plot(density(x))          # 核密度估計：平滑版的分佈曲線
+```
+
+* `hist(x)` 以分箱計數呈現分佈；`density(x)` 則用**核密度估計（kernel density）**畫出平滑曲線，兩者互補。
+
+## 小結 {#ch4-summary}
+
+R 用 `d`/`p`/`q`/`r` 四個前綴，為所有分配提供一致的介面：`d` 算密度、`p` 算累積機率、`q` 反推分位數、`r` 產生亂數。做假設檢定時 `p` 與 `q` 最常用（求 p 值與臨界值）；做模擬時 `r` 最常用。無論二項、常態、Poisson 或卡方，記法完全相同。
+
+## 課後練習 {#ch4-exercises}
+
+1. 某產品不良率 $p=0.1$，一批 20 個。用 `dbinom` 畫出不良品數的 PMF，並用 `pbinom` 求「不良品至多 3 個」的機率。
+2. 標準常態下，求 $P(-1.96 < Z < 1.96)$（提示：兩個 `pnorm` 相減）。
+3. 從 $N(170, 8^2)$（身高）抽 1000 個樣本，畫直方圖並疊上核密度曲線。
+4. 用 `qnorm` 求出雙尾 95% 信賴區間所對應的兩個臨界值，並解釋其意義。

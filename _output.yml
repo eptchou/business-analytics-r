@@ -1,0 +1,21 @@
+bookdown::bs4_book:
+  theme:
+    primary: "#2c6e9c"
+  repo: ~
+  css: style.css
+  lib_dir: assets
+  split_by: chapter
+  config:
+    toc:
+      collapse: section
+      before: |
+        <li><a href="./">商業分析與 R</a></li>
+    fontsettings:
+      theme: white
+      family: sans
+      size: 2
+bookdown::pdf_book:
+  latex_engine: xelatex
+  citation_package: natbib
+  keep_tex: true
+  toc_depth: 3

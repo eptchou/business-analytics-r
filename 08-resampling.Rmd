@@ -1,0 +1,97 @@
+# 訓練集、測試集與重抽樣 {#resampling}
+
+```{r ch8-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+配適模型時，如果用「同一批資料」既訓練又評估，會高估模型的表現（過度樂觀）。正確做法是把資料分成**訓練集（training set）**與**測試集（test set）**：用訓練集配適、用測試集驗證，才能誠實估計模型對**未見資料**的預測能力。本章介紹資料切分、交叉驗證與自助抽樣。
+
+## 訓練集與測試集 {#train-test}
+
+最簡單的做法：隨機抽一部分當訓練集，其餘當測試集。
+
+```{r train-test, eval=FALSE}
+library(foreign)
+kidiq <- read.dta("kidiq.dta")
+
+train <- sample(434, 200)                        # 從 434 筆隨機抽 200 筆當訓練
+fit   <- lm(kid_score ~ mom_iq, data = kidiq, subset = train)
+
+# 用測試集（-train，即沒被抽到的）計算均方誤差 MSE
+mean((kidiq$kid_score - predict(fit, kidiq))[-train]^2)
+```
+
+**逐行說明：**
+
+* `sample(434, 200)`：從 1~434 的索引中不重複抽 200 個，作為訓練集索引。
+* `subset = train`：只用這 200 筆配適模型。
+* `predict(fit, kidiq)` 對全體預測，`[-train]` 取出**測試集**的部分，與真實值相減平方再平均，得測試 MSE——這才是模型對新資料的誤差估計。
+
+## 交叉驗證 {#cross-validation}
+
+單次切分的結果會受「剛好抽到哪些資料」影響。**K 折交叉驗證（K-fold cross-validation）**把資料切成 K 組，輪流拿其中一組當測試、其餘當訓練，重複 K 次再平均，結果更穩定。常用 K = 5 或 10。
+
+```{r cv, eval=FALSE}
+library(boot)
+glm.fit <- glm(kid_score ~ mom_iq, data = kidiq)   # 用 glm 配適（cv.glm 需要）
+
+# 留一交叉驗證 LOOCV（K = 樣本數）
+cv.err <- cv.glm(kidiq, glm.fit)
+cv.err$delta        # 兩個值：原始 CV 估計與偏誤校正後的估計
+
+# 10 折交叉驗證
+cv.err <- cv.glm(kidiq, glm.fit, K = 10)
+cv.err$delta
+```
+
+* **LOOCV（Leave-One-Out）**：每次只留一筆當測試，K 等於樣本數；偏誤低但變異高、計算量大。
+* **K 折**：折數較少，計算快、變異較低，是實務上的主流。
+* `cv.err$delta` 回傳交叉驗證的預測誤差估計（第一個是原始值，第二個做了偏誤校正）。
+
+分類問題可自訂成本函數：
+
+```{r cv-class, eval=FALSE}
+cost <- function(card, pi = 0) mean(abs(card - pi) > 0.5)   # 誤分類率
+cv.err <- cv.glm(CreditCard, logit_model, cost, K = 10)
+cv.err$delta
+```
+
+* 對邏輯斯模型，用自訂 `cost`（以 0.5 為門檻的誤分類率）當作交叉驗證的評估指標。
+
+## 自助抽樣 Bootstrap {#bootstrap}
+
+**自助抽樣（bootstrapping）**用「有放回」重抽樣來逼近估計量的抽樣分佈，藉此估計其標準誤或偏誤，特別適合沒有簡單理論公式的統計量。做法：每次從原資料**取後放回**抽出與原樣本等大的一組，重複上千次。
+
+```{r boot, eval=FALSE}
+library(boot)
+
+# 定義：對指定索引的資料配適迴歸，回傳係數
+boot.fn <- function(data, index) {
+  coef(lm(kid_score ~ mom_iq, data = data, subset = index))
+}
+
+boot.fn(kidiq, 1:434)                        # 用全體資料 → 原始估計
+boot.fn(kidiq, sample(434, 434, replace = TRUE))  # 一次自助重抽樣
+
+b <- boot(kidiq, boot.fn, 1000)              # 重抽樣 1000 次
+b
+bias <- mean(b$t) - b$t0                      # 偏誤 = 重抽平均 - 原始估計
+```
+
+**逐行說明：**
+
+* `boot.fn(data, index)`：接受一組索引，對「被抽到的資料」配適模型並回傳係數——這是 `boot()` 要求的介面。
+* `sample(434, 434, replace = TRUE)`：關鍵在 `replace = TRUE`（取後放回），所以同一筆可能被抽中多次，這正是 bootstrap 的精神。
+* `boot(kidiq, boot.fn, 1000)`：自動重抽 1000 次並收集每次的係數，`b$t` 是 1000 組估計、`b$t0` 是原始估計。
+* 由這 1000 組估計的標準差，即可得到係數的**自助標準誤**，不必依賴常態理論公式。
+
+## 小結 {#ch8-summary}
+
+誠實評估模型的關鍵是「用未見過的資料來測」。最基本是訓練/測試切分；**K 折交叉驗證**輪流切分後平均，估計更穩定，是選模型與調參數的標準工具；**bootstrap** 則用有放回重抽樣逼近估計量的抽樣分佈，用來估計標準誤與偏誤。三者的共同精神都是「重抽樣（resampling）」——用資料本身模擬出更多情境，避免單一切分帶來的偏差。
+
+## 課後練習 {#ch8-exercises}
+
+1. 對 `mtcars`，用 10 折交叉驗證比較「`mpg ~ wt`」與「`mpg ~ wt + hp`」兩個模型的預測誤差。
+2. 對向量 `x <- 1:50`，用 bootstrap 重抽 1000 次估計 `mean(x)` 的標準誤。
+3. 說明 LOOCV 與 10 折交叉驗證在偏誤與變異上的取捨。
+4. 解釋為什麼「用訓練資料本身評估模型」會高估表現，並用一個過度配適的例子說明。

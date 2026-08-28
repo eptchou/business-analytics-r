@@ -1,0 +1,184 @@
+# 迴歸分析 {#regression}
+
+```{r ch6-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+**迴歸（regression）**用一個或多個**預測變數（predictor / 自變數）**去解釋或預測一個**反應變數（response / 依變數）**。它有三個層次的目的：**推論**（檢定變數間是否有關係）、**描述**（用模型刻畫關係）、**預測**（對新個案給出預測值）。本章聚焦最基礎也最重要的**線性迴歸**。
+
+## 線性迴歸與 `lm()` {#lm}
+
+最簡單的線性模型，是用「最佳配適直線」由一個數值變數預測另一個。所謂最佳，是指**最小平方法（least squares）**：找一條線使**殘差平方和最小**。R 用 `lm()` 配適：
+
+```{r lm-basic, eval=FALSE}
+fit.1 <- lm(kid_score ~ mom_iq, data = kidiq)   # 以母親 IQ 預測孩子成績
+summary(fit.1)                                   # 完整報表：係數、R²、p 值
+```
+
+* 公式 `kid_score ~ mom_iq` 讀作「`kid_score` 隨 `mom_iq` 變化」，對應模型 $\text{kid\_score}=\beta_0+\beta_1\,\text{mom\_iq}+\varepsilon$。
+* `summary(fit)` 印出係數估計、標準誤、t 值與 p 值、以及 $R^2$ 與 F 檢定。
+
+多變數與交互作用的公式寫法：
+
+| 公式 | 模型 |
+|------|------|
+| `Y ~ A` | $Y=\beta_0+\beta_1 A$ |
+| `Y ~ A + B` | 兩個主效果 |
+| `Y ~ A:B` | 只放交互作用項 $AB$ |
+| `Y ~ A*B` | 主效果 A、B 加上交互作用（等於 `A + B + A:B`） |
+| `Y ~ .` | 用所有其他欄位當預測變數 |
+
+### 用 `broom` 取得整齊的結果
+
+```{r lm-broom, eval=FALSE}
+library(broom)
+tidy(fit.1)     # 係數表整理成資料框（估計、標準誤、t、p）
+glance(fit.1)   # 整個模型的摘要（R²、AIC、BIC、logLik…）
+augment(fit.1)  # 每筆資料的配適值與殘差
+```
+
+* `broom` 把 `lm` 雜亂的輸出轉成整齊的資料框，方便後續以 dplyr／ggplot 處理。`tidy` 看係數、`glance` 看模型整體、`augment` 看逐筆診斷量。
+
+## 視覺化資料與配適線 {#lm-viz}
+
+```{r lm-plot, eval=FALSE}
+library(tidyverse)
+ggplot(kidiq, aes(mom_iq, kid_score)) +
+  geom_point() +
+  geom_smooth(method = "lm")     # 疊上線性配適線與信賴帶
+```
+
+* `geom_smooth(method = "lm")` 直接畫出最小平方迴歸線與其 95% 信賴區間陰影，是快速檢視線性關係的利器。
+
+### 類別預測變數與交互作用
+
+當自變數是類別（如「有無高中學歷」`mom_hs`），R 會自動轉成**虛擬變數（dummy variable）**：
+
+```{r lm-interaction, eval=FALSE}
+fit.2 <- lm(kid_score ~ mom_hs + mom_iq, data = kidiq)          # 無交互作用
+fit.3 <- lm(kid_score ~ mom_hs * mom_iq, data = kidiq)          # 含交互作用
+
+# 分組畫不同斜率的迴歸線
+ggplot(kidiq, aes(x = mom_iq, y = kid_score, color = as.factor(mom_hs))) +
+  geom_point() +
+  geom_smooth(method = "lm", aes(group = as.factor(mom_hs)))
+```
+
+* `mom_hs * mom_iq` 展開為 `mom_hs + mom_iq + mom_hs:mom_iq`；交互作用項讓「母親 IQ 對成績的影響」可以因有無高中學歷而不同（斜率不同）。
+* 類別係數的解釋是「相對於參照組（baseline）的差異」；可用 `contrasts(factor(x))` 看 R 如何編碼，用 `relevel()` 指定參照組。
+
+## 假設與殘差診斷 {#diagnostics}
+
+線性迴歸的假設，依重要性排序為：**效度（選對變數）** > **可加性與線性** > **誤差獨立** > **等變異** > **誤差常態**。配適後務必做殘差診斷：
+
+```{r lm-resid, eval=FALSE}
+par(mfrow = c(2, 2))   # 一次排 2×2 四張圖
+plot(fit.1)
+```
+
+`plot(lm)` 依序給出四張診斷圖：
+
+1. **Residuals vs Fitted**：檢查殘差是否有非線性型態（應隨機散佈於 0 附近）。
+2. **Normal Q-Q**：檢查殘差是否常態（點應貼近對角線）。
+3. **Scale-Location**：檢查等變異（homoscedasticity）。
+4. **Residuals vs Leverage**：找出有影響力的離群點（看 Cook's distance，通常 $C_i>1$ 視為高度影響）。
+
+其他常用診斷：
+
+```{r lm-diag2, eval=FALSE}
+library(car)
+durbinWatsonTest(fit.1)   # 檢定殘差是否獨立（自我相關）
+vif(fit.2)                # 變異數膨脹因子，檢查共線性（>4 或 >10 要留意）
+cooks.distance(fit.1)     # 各點的 Cook's distance
+```
+
+## 模型選擇 {#model-selection}
+
+當有多個候選模型時，需要客觀準則來取捨：
+
+```{r model-compare, eval=FALSE}
+anova(fit.1, fit.2)   # 巢狀模型比較（F 檢定）
+
+library(broom)
+glance(fit.1) %>% select(AIC, BIC)   # AIC / BIC，越小越好
+glance(fit.2) %>% select(AIC, BIC)
+```
+
+* **AIC / BIC**：在配適度與模型複雜度之間取平衡，用以防止過度配適；$AIC=2(k-\log L)$、$BIC=k\log(n)-2\log L$，其中 $k$ 為參數個數、$n$ 為樣本數。兩者都是**越小越好**。
+* **概似比檢定（LRT）**：對巢狀模型，$D=2(\log L_1-\log L_0)\sim\chi^2$，可檢定加入變數是否顯著改善模型。
+
+### 逐步迴歸
+
+```{r stepwise, eval=FALSE}
+full <- lm(kid_score ~ ., data = kidiq)   # 全模型
+null <- lm(kid_score ~ 1, data = kidiq)   # 只有截距
+
+step(full, direction = "backward")                                  # 後向：逐一剔除
+step(null, scope = list(lower = null, upper = full),
+     direction = "forward")                                          # 前向：逐一加入
+
+library(MASS)
+step.model <- stepAIC(full, direction = "both")   # 雙向逐步，依 AIC 選模型
+```
+
+* 逐步迴歸自動地以 AIC 為準則增刪變數。`backward` 從全模型往下刪、`forward` 從空模型往上加、`both` 兩者交替。
+
+## 課堂實作：`kidiq` 資料 {#ch6-lab}
+
+課堂檔以 `kidiq.dta`（母親特質與孩子測驗成績）貫穿整章。以下說明幾段值得注意的程式。
+
+### 手動疊加不同組別的迴歸線
+
+```{r lab6-curve, eval=FALSE}
+fit.2 <- lm(kid_score ~ mom_hs + mom_iq)
+colors <- ifelse(mom_hs == 1, "black", "gray")     # 依有無高中學歷上色
+plot(mom_iq, kid_score, col = colors, pch = 20)
+curve(cbind(1, 1, x) %*% coef(fit.2), add = TRUE, col = "black")  # mom_hs = 1 的線
+curve(cbind(1, 0, x) %*% coef(fit.2), add = TRUE, col = "gray")   # mom_hs = 0 的線
+```
+
+* `coef(fit.2)` 取出係數向量；`cbind(1, 1, x) %*% coef(...)` 以矩陣乘法算出「截距 + mom_hs 效果 + 斜率×x」，即該組的預測直線。這段示範如何用線性代數手動畫出配適線。
+
+### 預測新個案
+
+```{r lab6-predict, eval=FALSE}
+x.new <- data.frame(mom_hs = 1, mom_iq = 100)
+predict(fit.2, x.new, interval = "prediction", level = 0.95)
+```
+
+* `predict()` 對新資料給出點預測；`interval = "prediction"` 額外回傳**預測區間**（比信賴區間寬，因為納入了個體隨機誤差）。
+
+### 用矩陣公式驗證最小平方解
+
+```{r lab6-matrix, eval=FALSE}
+n <- length(mom_iq)
+x <- as.matrix(cbind(rep(1, n), mom_iq))   # 設計矩陣（第一欄全 1 代表截距）
+y <- as.matrix(kid_score)
+solve(t(x) %*% x) %*% t(x) %*% y            # b = (X'X)^(-1) X'y
+```
+
+* 這段把課本公式 $\hat{\beta}=(X^TX)^{-1}X^Ty$ 直接以 R 實作，結果應與 `lm()` 的係數一致——把理論與軟體對起來，理解才紮實。
+
+### 變數轉換處理非線性
+
+```{r lab6-transform, eval=FALSE}
+x <- 1:7
+y <- c(27, 36, 45, 181, 306, 1093, 2459)   # 看起來是指數成長
+plot(x, y)
+
+f <- lm(I(log10(y)) ~ x)   # 對 y 取 log10 後再線性配適
+plot(x, log10(y)); abline(f)   # 轉換後呈線性
+```
+
+* 當 y 對 x 呈**指數成長**時，對 y 取對數可「拉直」關係，再用線性迴歸。`I(log10(y))` 中的 `I()` 表示「照字面運算」，避免公式語法把 `log10(y)` 誤解。
+
+## 小結 {#ch6-summary}
+
+線性迴歸用 `lm(Y ~ X, data)` 配適，`summary()` 看報表，`broom` 取整齊結果。類別變數會自動轉虛擬變數，係數解釋為「相對參照組的差異」；交互作用讓不同組別有不同斜率。配適後務必用 `plot(lm)` 做殘差診斷，檢查線性、常態、等變異與獨立四項假設，並用 `vif` 查共線性。模型選擇以 AIC/BIC、`anova`、逐步迴歸為工具。遇到非線性關係時，適當的變數轉換往往能救回線性模型。
+
+## 課後練習 {#ch6-exercises}
+
+1. 用 `mtcars`，以 `wt`、`hp` 預測 `mpg`，比較「有無交互作用」兩個模型的 AIC 並解釋。
+2. 對上題模型畫四張殘差診斷圖，判斷是否違反等變異或常態假設。
+3. 用 `stepAIC()` 對 `mtcars` 全模型做雙向逐步迴歸，報告最終選入的變數。
+4. 找一組呈指數關係的資料，比較「直接線性配適」與「對 y 取對數後配適」的殘差圖差異。

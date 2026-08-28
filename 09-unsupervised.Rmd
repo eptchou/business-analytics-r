@@ -1,0 +1,116 @@
+# 非監督式學習：分群 {#unsupervised}
+
+```{r ch9-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+**機器學習**是用演算法分析資料、從中學習規則，進而預測或判斷。依是否有「標籤（label）」可分為**監督式**與**非監督式**。本章介紹非監督式學習中最常見的**集群分析（clustering）**——在沒有標籤的情況下，把相似的個體分到同一群，使「群內相似度高、群間差異大」。
+
+## 分群的三步驟 {#cluster-steps}
+
+集群分析的一般流程：
+
+1. **計算個體間的相似度／距離**。常用距離：歐氏距離（Euclidean）、曼哈頓距離（Manhattan）、漢明距離（Hamming）、餘弦相似度（Cosine）、相關係數。注意 距離 = 1 − 相似度。
+2. **決定分群方法與群數**（K-means、階層式分群…）。
+3. **描述各群的特徵與關係**（對群做 EDA）。
+
+## K-means {#kmeans}
+
+K-means 是**分割式分群**：需**事先指定群數 k**，透過反覆迭代，讓**群內平方和（within-cluster sum of squares）** $\sum_{k}\sum_{x_i\in C_k}(x_i-\mu_k)^2$ 最小化。演算法：
+
+1. 隨機選 k 個點當初始群心（centroid）。
+2. 把每個點指派給最近的群心。
+3. 以目前群內成員重新計算群心。
+4. 未收斂則回到步驟 2、3。
+
+```{r kmeans-fit, eval=FALSE}
+library(datasets); data(iris)
+
+k <- kmeans(iris[, 1:4], centers = 3, nstart = 25)   # 分 3 群，嘗試 25 組初始值
+str(k)
+k$size                       # 各群大小
+k$withinss                   # 各群的群內平方和
+table(k$cluster, iris$Species)   # 分群結果對照真實品種
+```
+
+**逐行說明：**
+
+* `iris[, 1:4]`：只用四個數值特徵（品種標籤 `Species` 不放進去，因為這是非監督）。
+* `centers = 3`：指定分 3 群。
+* `nstart = 25`：K-means 對初始群心敏感，`nstart` 嘗試 25 組不同的隨機起點、取最好的一組，避免陷入不好的局部解——**強烈建議設定**。
+* `table(k$cluster, iris$Species)`：雖然分群沒用到標籤，但事後可對照真實品種，檢視分群品質。
+
+### 如何選 k？肘部法則
+
+群數 k 是要自己決定的。**肘部法則（Elbow Method）**畫出「群內平方和」隨 k 的變化，找曲線轉折（手肘）處：
+
+```{r kmeans-elbow, eval=FALSE}
+library(factoextra)
+fviz_nbclust(iris[, 1:4],
+             FUNcluster = kmeans,
+             method = "wss",       # within sum of square
+             k.max = 20) +
+  geom_vline(xintercept = 3, linetype = 2)   # 在 k=3 畫參考線
+```
+
+* `method = "wss"` 畫群內平方和；曲線一開始快速下降，到某個 k 之後趨緩，那個轉折點就是建議群數。另有 `"silhouette"`（輪廓係數）與 gap statistic 等方法可交叉參考。
+
+## 階層式分群 {#hierarchical}
+
+**階層式分群（hierarchical clustering）**不需事先指定群數，而是由下往上（或由上往下）逐步合併，最後畫成**樹狀圖（dendrogram）**，再依需要「橫切一刀」決定群數。
+
+```{r hclust, eval=FALSE}
+E.dist <- dist(iris[, 1:4], method = "euclidean")   # 先算距離矩陣
+tree   <- hclust(E.dist, method = "ward.D2")        # 以 Ward 法建樹
+
+plot(tree, xlab = "Euclidean")
+abline(h = 10, col = "red")            # 在高度 10 處橫切
+
+cluster <- cutree(tree, k = 3)         # 直接切成 3 群
+table(cluster, iris$Species)           # 對照真實品種
+rect.hclust(tree, k = 3, border = "red")  # 在樹狀圖上框出 3 群
+```
+
+**逐行說明：**
+
+* `dist(...)`：計算所有個體兩兩之間的距離，是階層式分群的輸入。
+* `hclust(距離, method = "ward.D2")`：`method` 決定「群與群之間的距離」如何定義（Ward 法傾向產生大小相近的群；另有 single、complete、average 等）。
+* `cutree(tree, k = 3)`：把樹狀圖切成指定群數，回傳每個點的群編號。
+* `rect.hclust()`：在圖上把各群框起來，視覺化分群結果。
+
+## 課堂實作：顧客分群 {#ch9-lab}
+
+課堂練習以 `Mall_Customers.csv`（購物中心顧客）做客戶分群，是行銷上的**客戶區隔（customer segmentation）**經典應用。流程：
+
+1. **變數標準化**。當變數尺度不一（有金額、有年齡），距離計算會被大尺度變數主導，故需標準化：類別變數轉成 1/0；數值變數用 $(x-\min)/\text{range}$ 縮放到 [0,1]，或用 `scale()` 做 z 分數標準化。
+2. **決定方法與群數**（肘部法則 / 輪廓係數）。
+3. **對每一群做 EDA**，描述各群顧客的輪廓（年齡、收入、消費分數），轉化為可行動的行銷洞察。
+
+```{r lab9-flow, eval=FALSE}
+mall <- read.csv("Mall_Customers.csv", sep = ",")
+
+# 對數值變數標準化後再分群
+X <- scale(mall[, c("Age", "Annual.Income", "Spending.Score")])
+
+fviz_nbclust(X, kmeans, method = "wss")     # 先找建議群數
+km <- kmeans(X, centers = 5, nstart = 25)   # 假設選 5 群
+fviz_cluster(km, data = X)                   # 視覺化分群
+
+# 對每群描述輪廓
+aggregate(mall[, -1], by = list(cluster = km$cluster), mean)
+```
+
+* `scale()` 讓每個變數平均 0、標準差 1，確保距離計算公平。
+* `fviz_cluster()` 把高維分群結果投影到前兩個主成分平面上呈現。
+* `aggregate(..., mean)` 算出每一群的平均輪廓，這一步把「數學上的群」翻譯成「業務上可理解的客群」。
+
+## 小結 {#ch9-summary}
+
+非監督式學習在沒有標籤的情況下尋找資料的結構。**K-means** 需事先指定群數、對初始值敏感（記得設 `nstart`），以群內平方和最小化為目標；**階層式分群**不需指定群數，產生可橫切的樹狀圖。無論哪種方法，**分群前務必標準化變數**，否則大尺度變數會主導距離。群數可用肘部法則、輪廓係數等輔助決定，最後一定要**對每群做 EDA**，把數學結果轉成業務洞察。
+
+## 課後練習 {#ch9-exercises}
+
+1. 對標準化後的 `iris[,1:4]` 跑 K-means（k=3），並用 `table()` 與真實品種比較分群正確率。
+2. 用肘部法則與輪廓係數兩種方法，各自建議 `iris` 的最佳群數，比較結果。
+3. 對 `USArrests` 資料做階層式分群（Ward 法），畫樹狀圖並切成 4 群，描述各群特徵。
+4. 說明為何分群前需要標準化，並舉一個不標準化會導致錯誤分群的例子。

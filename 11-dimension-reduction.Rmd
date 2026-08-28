@@ -1,0 +1,115 @@
+# 維度縮減 {#dimension-reduction}
+
+```{r ch11-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+當變數很多（高維）時，模型容易過度配適、計算變慢、也難以視覺化。**維度縮減（dimension reduction）**在盡量保留資訊的前提下降低變數個數。方法分兩類：**特徵選取（feature selection）**——挑出原變數的子集（如相關係數、VIF、LASSO、隨機森林）；**特徵萃取（feature extraction）**——把高維資料轉換到低維新空間（如 PCA、LDA）。本章聚焦 PCA。
+
+## 主成分分析 PCA {#pca}
+
+**主成分分析（Principal Component Analysis, PCA）**是一種線性轉換，尋找資料**變異最大**的方向作為新座標軸。它把原變數線性組合成新的**主成分（PC）**，這些主成分**彼此正交（不相關）**，且變異由大到小排列：$Var(PC_1)\ge Var(PC_2)\ge\cdots$。前幾個主成分往往就能解釋大部分變異，達到降維目的。
+
+主成分是原變數的**標準化線性組合**：$PC_i=\phi_{1i}V_1+\cdots+\phi_{pi}V_p$，係數平方和為 1、主成分間相關為 0。
+
+概念流程：**p 個變數 → 特徵值分解（eigen-decomposition）→ p 個主成分**。缺點：主成分是所有變數的組合，**不易解釋**；不適用於非線性或類別資料。
+
+### 配適 PCA
+
+```{r pca-fit, eval=FALSE}
+library(stats)
+pca <- prcomp(data, center = TRUE, scale = TRUE)
+summary(pca)      # 各主成分的標準差、解釋變異比例、累積比例
+```
+
+**逐行說明：**
+
+* `center = TRUE`：先把每個變數平減（平均設為 0）。
+* `scale = TRUE`：把每個變數標準化（標準差設為 1）。**當變數尺度不同時務必設 `scale = TRUE`**，否則大尺度變數會主導主成分。
+* `summary(pca)` 是最重要的輸出：`Proportion of Variance` 是每個 PC 解釋的變異比例，`Cumulative Proportion` 是累積比例——用來決定「保留幾個主成分」。
+
+### 陡坡圖與 Kaiser 準則
+
+```{r pca-scree, eval=FALSE}
+screeplot(pca, type = "line")
+abline(h = 1, col = "blue")   # Kaiser 準則：保留特徵值 > 1 的主成分
+
+# 手動計算解釋變異比例
+pve <- pca$sdev^2 / sum(pca$sdev^2)
+plot(cumsum(pve), type = "b",
+     xlab = "Principal Component",
+     ylab = "Cumulative Proportion of Variance Explained")
+abline(h = 0.8)   # 常見門檻：保留能解釋 80% 變異的主成分數
+```
+
+* **陡坡圖（scree plot）**畫出各主成分的變異，找轉折點決定保留數目。
+* **Kaiser 準則**：`pca$sdev^2`（特徵值）大於 1 的主成分才保留。
+* 另一常見做法是保留「累積解釋變異達 80%」所需的主成分數。
+
+### 負荷量與雙標圖
+
+```{r pca-loadings, eval=FALSE}
+pca$rotation    # 負荷量（loadings）：每個主成分是原變數的哪種線性組合
+head(pca$x)     # 主成分分數：每筆資料在新座標上的位置
+
+biplot(pca, scale = TRUE)   # 雙標圖：同時看樣本點與變數方向（前兩個 PC）
+```
+
+* `pca$rotation`（旋轉矩陣）是**負荷量**，看每個主成分主要由哪些原變數構成，用以「詮釋」主成分的意義。
+* `pca$x` 是降維後的資料（主成分分數），可拿去做後續的分群或建模。
+* `biplot()` 把樣本與變數畫在同一張圖，箭頭方向相近的變數高度相關。
+
+## 稀疏主成分分析 SPCA {#spca}
+
+PCA 的每個主成分都是**所有**變數的組合，難以解釋。**稀疏 PCA（Sparse PCA, SPCA）**在求解中加入 LASSO 懲罰項，讓不重要的負荷量變成 0（係數稀疏化），使每個主成分只由少數變數構成，更好解讀。
+
+```{r spca, eval=FALSE}
+library(nsprcomp)
+spca <- nscumcomp(data, k = 40, nneg = TRUE, scale = TRUE)
+summary(spca)
+```
+
+* `k`：非 0 係數的總個數（約為「每個主成分期望的非 0 係數數」× 變數數）。
+* `nneg = TRUE`：限制所有係數非負，讓結果更容易做正向解釋。
+* 稀疏化後，每個主成分只挑出少數關鍵變數，犧牲一點變異解釋力，換取可解釋性。
+
+## 課堂實作：影像壓縮 {#ch11-lab}
+
+課堂檔用 PCA 做**影像壓縮**，是特徵萃取的精彩應用。一張彩色照片是三個（RGB）數值矩陣；對每個顏色通道做 PCA，只保留前幾個主成分重建影像，就能大幅縮小檔案。
+
+```{r lab11-image, eval=FALSE}
+library(jpeg)
+photo <- readJPEG("President.jpg")   # 讀入後是 高 × 寬 × 3 的陣列
+r <- photo[,,1]; g <- photo[,,2]; b <- photo[,,3]   # 拆成 RGB 三個矩陣
+
+# 對每個通道各做一次 PCA
+r.pca <- prcomp(r, center = FALSE)
+g.pca <- prcomp(g, center = FALSE)
+b.pca <- prcomp(b, center = FALSE)
+rgb.pca <- list(r.pca, g.pca, b.pca)
+
+# 只用前 i 個主成分重建影像並輸出
+for (i in round(seq.int(3, nrow(photo), length.out = 10))) {
+  pca.img <- sapply(rgb.pca, function(j) {
+    j$x[, 1:i] %*% t(j$rotation[, 1:i])   # 用前 i 個 PC 重建該通道
+  }, simplify = "array")
+  writeJPEG(pca.img, paste0("photo_", i, "_components.jpg"))
+}
+```
+
+**逐行說明：**
+
+* 影像的每個顏色通道是一個矩陣，可直接做 PCA。
+* `j$x[, 1:i] %*% t(j$rotation[, 1:i])`：用「前 i 個主成分分數 × 前 i 個負荷量的轉置」重建近似影像——保留的主成分越多，畫質越好、檔案越大；越少則壓縮越多。
+* 這個例子直觀展示 PCA 的本質：**用少數幾個方向就能捕捉大部分資訊**。
+
+## 小結 {#ch11-summary}
+
+維度縮減分為「挑子集」的特徵選取與「造新軸」的特徵萃取。**PCA** 尋找變異最大的正交方向，前幾個主成分常能解釋大部分變異，是最常用的降維與視覺化工具；使用時記得 `scale = TRUE`，並用陡坡圖、Kaiser 準則或累積 80% 變異來決定保留數目。PCA 的代價是主成分不易解釋，**SPCA** 藉 LASSO 稀疏化改善可解釋性。影像壓縮則是 PCA「用少數方向保留大部分資訊」的生動示範。
+
+## 課後練習 {#ch11-exercises}
+
+1. 對 `iris[,1:4]` 做 PCA，回答前兩個主成分共解釋多少變異，並畫雙標圖詮釋各變數方向。
+2. 對 `HDclassif::wine` 做 PCA，用陡坡圖與 Kaiser 準則決定保留幾個主成分。
+3. 比較同一份資料的 PCA 與 SPCA 負荷量，說明 SPCA 在可解釋性上的優勢。
+4. 用 PCA 把 `iris` 降到 2 維後做 K-means 分群，與用原始 4 維分群的結果比較。

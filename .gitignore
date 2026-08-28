@@ -1,0 +1,9 @@
+_book/
+_bookdown_files/
+*_cache/
+*_files/
+business-analytics-r.Rmd
+business-analytics-r.md
+.Rhistory
+.RData
+.DS_Store

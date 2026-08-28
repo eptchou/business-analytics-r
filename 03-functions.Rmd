@@ -1,0 +1,270 @@
+# 自訂函數與流程控制 {#functions}
+
+```{r ch3-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE)
+```
+
+當同一段程式碼要重複使用，或邏輯開始變複雜時，就該把它包成**函數（function）**，並用**流程控制（control flow）**決定程式的走向。本章介紹自訂函數、布林與邏輯運算、條件判斷、迴圈，以及 R 特有的「隱含迴圈」`apply` 家族。
+
+## 自訂函數 {#userfunc}
+
+一個函數由三部分組成：**輸入（引數）**、**運算程式碼**、**輸出（回傳值）**。語法格式：
+
+```{r func-syntax, eval=FALSE}
+f <- function(x) {
+  # 運算程式碼
+  return(y)   # 輸出
+}
+```
+
+### 動機：避免重複
+
+假設有一筆模擬資料，想對每一欄做「最小–最大標準化」$\dfrac{x-\min(x)}{\max(x)-\min(x)}$：
+
+```{r func-motivation}
+df <- data.frame(
+  a = rnorm(10),   # 產生 10 個標準常態隨機數
+  b = rnorm(10),
+  c = rnorm(10),
+  d = rnorm(10)
+)
+```
+
+若對每一欄各寫一次，程式又臭又長且容易出錯。不如寫成函數：
+
+```{r func-scale}
+scalefnc <- function(x) {
+  maxmin <- range(x, na.rm = TRUE)               # range() 一次回傳 c(最小值, 最大值)
+  return((x - maxmin[1]) / (maxmin[2] - maxmin[1]))
+}
+
+scalefnc(df$a)   # 對 a 欄標準化
+```
+
+**逐行說明：**
+
+* `function(x)`：宣告函數，`x` 是輸入（此處預期是一個向量）。
+* `range(x, na.rm = TRUE)`：回傳長度為 2 的向量，`maxmin[1]` 是最小值、`maxmin[2]` 是最大值；`na.rm = TRUE` 忽略缺值。
+* `return(...)`：把標準化後的向量送回。之後只要 `scalefnc(任一欄)` 就能重複使用。
+
+## 布林與邏輯運算 {#boolean}
+
+**布林運算子**回傳 `TRUE` / `FALSE`，是條件判斷的基礎：
+
+```{r boolean}
+4 < 7     # 小於
+4 > 7     # 大於
+```
+
+常見布林運算子：`<`、`>`、`<=`、`>=`、`==`（等於）、`!=`（不等於）。特別提醒：`=` 是「指派」，`==` 才是「判斷相等」，初學者極易混淆。
+
+**邏輯運算子** AND 與 OR 各有兩種形式，差別在於「逐元素」還是「只看第一個」：
+
+```{r logical}
+set.seed(99)
+x <- runif(8, 0, 1)          # 8 個 0~1 均勻亂數
+
+0 <= x & x <= 0.5                  # &：逐元素比較，回傳長度 8 的邏輯向量
+0 <= x[1] && x[1] <= 0.5           # &&：明確比較第一個元素，回傳單一值
+```
+
+* **單符號 `&`／`|`**：對向量**逐一元素**比較，結果是等長的邏輯向量——篩選資料時用這個。
+* **雙符號 `&&`／`||`**：左右兩側都必須是長度 1 的邏輯值，回傳單一 `TRUE`/`FALSE`——`if()` 的條件式用這個。若輸入是向量，應像上例以 `x[1]` 明確指定要判斷的元素。
+
+配合邏輯索引，可批次修改符合條件的元素：
+
+```{r logical-index}
+x[0 <= x & x <= 0.5] <- 99   # 把落在 [0, 0.5] 的元素全換成 99
+x
+```
+
+## 條件判斷 {#conditionals}
+
+### `if...else`
+
+```{r if-else}
+if (sample(1:10, 1) > 5) {
+  message("Bingo!")
+} else {
+  message("Fail!")
+}
+```
+
+* `sample(1:10, 1)` 隨機抽一個 1~10 的整數；若大於 5 執行第一個區塊，否則執行 `else` 區塊。多重條件可用 `else if` 串接。
+
+### `ifelse()`：向量化的條件
+
+`if` 一次只能判斷一個條件；若要對**整個向量**逐元素判斷，用 `ifelse()`：
+
+```{r ifelse}
+ifelse(sample(1:10, 1) == 5, "bingo", "fail")   # 條件, 成立回傳, 不成立回傳
+```
+
+### `switch()`：多分支選擇
+
+```{r switch}
+my.lunch <- function(y) {
+  switch(y,
+         poor = "Shinemood",
+         ok   = "McD",
+         rich = "Starbucks")
+}
+my.lunch("ok")
+```
+
+* `switch()` 依第一個引數的值，跳到對應名稱的分支回傳結果，比一長串 `else if` 清爽。
+
+## 迴圈 {#loops}
+
+### `for`：已知次數的重複
+
+```{r for-loop}
+result <- 0
+for (i in 1:100) {   # i 依序取 1, 2, ..., 100
+  result <- result + i
+}
+result               # 1+2+...+100，可用 sum(1:100) 驗證
+```
+
+* `for (i in 向量)`：迴圈變數 `i` 逐一取向量的值，重複執行大括號內的程式。此例累加得 5050。
+
+### `while`：條件成立就一直做
+
+```{r while-loop}
+i <- 1; result <- 0
+while (i < 101) {    # 當條件為真，持續執行
+  result <- result + i
+  i <- i + 1         # 別忘了更新 i，否則會無限迴圈
+}
+result
+```
+
+### `repeat` + `break` + `next`
+
+`repeat` 無條件重複，靠 `break` 跳出；`next` 則是跳過本次、直接進入下一輪：
+
+```{r repeat-break-next}
+for (i in 1:6) {
+  if (i == 4) break   # i 到 4 時整個跳出迴圈
+  print(i)            # 只印出 1, 2, 3
+}
+
+for (i in 1:6) {
+  if (i == 3) next    # i 等於 3 時跳過，不執行下面
+  print(i)            # 印出 1, 2, 4, 5, 6
+}
+```
+
+## 隱含迴圈：`apply` 家族 {#apply}
+
+R 鼓勵用「向量化」取代顯式迴圈，`apply` 家族就是把函數一次套用到資料的每個部分，程式更短也更快。
+
+```{r apply-family}
+x <- matrix(1:24, nrow = 4)
+
+apply(x, 1, sum)    # margin = 1：對每一「列」求和
+apply(x, 2, sum)    # margin = 2：對每一「行」求和
+```
+
+* `apply(x, margin, fun)`：`margin = 1` 沿列、`margin = 2` 沿行，把 `fun` 套用上去。`fun` 也可以是自訂函數。
+
+其他成員：
+
+```{r apply-others}
+x <- list(a = 1, b = 1:3, c = 10:100)
+lapply(x, length)   # 回傳「list」，每個元素套用 length
+sapply(x, length)   # 同上但「簡化」成向量（simplify）
+```
+
+* `lapply`（list-apply）永遠回傳 list；`sapply`（simplify-apply）會盡量把結果簡化成向量或矩陣。
+
+`tapply` 做**分組統計**，`replicate` 則重複執行運算式（常用於模擬）：
+
+```{r tapply-replicate}
+group <- as.factor(sample(c("a","b","c"), 30, replace = TRUE))
+score <- sample(0:100, 30, replace = TRUE)
+tapply(score, group, mean)      # 依 group 分組，各組算 score 平均
+
+replicate(5, sample(1:5, 1))    # 重複抽樣 5 次
+```
+
+## 課堂實作：`Lec3 R codes.R` {#ch3-lab}
+
+課堂檔用一連串練習串起本章觀念。以下挑重點逐段說明。
+
+### 練習：把函數回傳多個值（用 list）
+
+```{r lab3-stat, eval=FALSE}
+my.stat <- function(x) {
+  x.number <- length(x)
+  x.mean   <- mean(x)
+  x.sd     <- sd(x)
+  list(number = x.number, mean = x.mean, sd = x.sd)  # 用 list 打包多個輸出
+}
+```
+
+* 函數若要一次回傳「個數、平均、標準差」等**多個不同型別**的結果，最自然的方式是包成 `list`，呼叫端再用 `$` 取用。
+
+### 練習：自己實作兩樣本 t 檢定
+
+```{r lab3-ttest, eval=FALSE}
+two.sample.t <- function(x1, x2) {
+  n1 <- length(x1); n2 <- length(x2)
+  m1 <- mean(x1);   m2 <- mean(x2)
+  v1 <- var(x1);    v2 <- var(x2)
+  sp <- ((n1 - 1) * v1 + (n2 - 1) * v2) / (n1 + n2 - 2)   # 合併變異數
+  t  <- (m1 - m2) / sqrt(sp * (1/n1 + 1/n2))               # t 統計量
+  return(c(mean = c(m1, m2), pooled.var = sp, t = t))
+}
+
+var1 <- rnorm(10, 3, 1); var2 <- rnorm(10, 0, 1)
+two.sample.t(var1, var2)
+t.test(var1, var2, var.equal = TRUE)   # 用內建函數驗證自己算的結果
+```
+
+* 合併變異數 $s_p^2=\dfrac{(n_1-1)s_1^2+(n_2-1)s_2^2}{n_1+n_2-2}$，檢定統計量 $t=\dfrac{\bar{x}_1-\bar{x}_2}{\sqrt{s_p^2(1/n_1+1/n_2)}}$。
+* 最後用內建 `t.test(..., var.equal = TRUE)` 對照，確認自寫函數正確——這是驗證程式的好習慣。
+
+### 練習：以模擬驗證機率理論（撲克牌）
+
+```{r lab3-poker, eval=FALSE}
+one <- function() {
+  deck <- c(rep("h",13), rep("d",13), rep("c",13), rep("s",13))  # 一副 52 張
+  hand <- sample(deck, size = 5)                                  # 抽 5 張
+  diamonds <- sum(hand == "d"); hearts <- sum(hand == "h")
+  diamonds == hearts                                             # 紅心數 = 方塊數？
+}
+mean(replicate(10000, one()))   # 模擬一萬次的成功比例
+
+# 理論值
+num <- choose(26,5) + choose(13,1)*choose(13,1)*choose(26,3) +
+       choose(13,2)*choose(13,2)*choose(26,1)
+num / choose(52, 5)
+```
+
+* `one()` 模擬「抽一手 5 張，紅心與方塊張數是否相等」。
+* `replicate(10000, one())` 重複一萬次，取平均即為模擬機率，再與組合數算出的**理論機率**比對——若兩者接近，代表模擬與理論一致。
+
+### 練習：階乘的三種寫法
+
+```{r lab3-factorial, eval=FALSE}
+factorial.for <- function(n) { f <- 1; for (i in 1:n) f <- f * i; f }
+factorial.while <- function(n) {
+  f <- 1; t <- n
+  while (t > 1) { f <- f * t; t <- t - 1 }
+  f
+}
+```
+
+* 同一個問題（計算 $n!$）可用 `for`、`while`、`repeat` 三種迴圈實作，結果相同——說明迴圈只是手段，重點是把「重複的規則」寫清楚。
+
+## 小結 {#ch3-summary}
+
+把重複邏輯包成**函數**能大幅提升可讀性與可維護性；函數要回傳多個結果時用 `list` 打包。流程控制方面，`if`／`switch` 處理單一條件分支，`ifelse` 做向量化判斷，`for`／`while`／`repeat` 處理重複，並以 `break`／`next` 微調流程。最後，善用 `apply` 家族取代顯式迴圈，能讓 R 程式更簡潔高效。務必分清 `&`/`&&`、`=`/`==` 的差別。
+
+## 課後練習 {#ch3-exercises}
+
+1. 寫一個函數 `age_grp(x)`，把年齡向量分成 1–20、21–40、41–60、61+ 四組並編碼為 A/B/C/D（提示：巢狀 `ifelse`）。
+2. 用 `while` 迴圈模擬「投擲公正硬幣，直到出現第 3 個正面為止」，回傳總共投了幾次。
+3. 用 `sapply` 對一個 list 內的每個數值向量計算平均與標準差。
+4. 比較 `for` 迴圈與 `sapply` 在計算 $1^2, 2^2, \dots, 100^2$ 上的寫法差異。

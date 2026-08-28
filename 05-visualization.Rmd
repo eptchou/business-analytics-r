@@ -1,0 +1,163 @@
+# 視覺化與探索式資料分析 {#visualization}
+
+```{r ch5-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+**探索式資料分析（Exploratory Data Analysis, EDA）**的目的，是在正式建模之前，先「看懂」資料——它的外觀、維度、變數分佈與變數間的關係。視覺化是 EDA 的主要手段：在不簡化資訊的前提下，降低理解高維、複雜資料的門檻。本章先介紹 R 內建繪圖，再進入 `ggplot2` 文法，最後以一個銷售資料的完整 EDA 收尾。
+
+## 依變數個數選圖 {#choose-plot}
+
+選什麼圖，取決於變數的**數量**與**型別**：
+
+* **單變數**：類別型用圓餅圖 `pie()`、長條圖 `barplot()`；連續型用直方圖 `hist()`。
+* **雙變數**：連續 vs 連續用散佈圖 `plot(x, y)`；連續 vs 離散用盒鬚圖 `boxplot()`；離散 vs 離散用馬賽克圖 `mosaicplot()`。
+* **多變數**：散佈圖矩陣 `plot(data)`、相關圖 `corrplot()`、熱圖 `heatmap.2()`。
+
+以內建的 `iris`（鳶尾花）資料示範：
+
+```{r base-plots, eval=FALSE}
+pie(table(iris$Species))          # 類別：三品種的比例
+barplot(table(iris$Species))      # 類別：三品種的計數
+
+boxplot(iris$Sepal.Length ~ iris$Species)   # 連續 vs 離散：各品種花萼長度分佈
+
+plot(iris)                        # 多變數：所有變數兩兩散佈圖
+```
+
+* `table(iris$Species)`：先計數每個品種的筆數，再交給 `pie`／`barplot`。
+* `boxplot(y ~ x)`：`~` 是 R 的**公式（formula）**語法，讀作「y 隨 x 而分」；此處看不同品種的花萼長度分佈。
+* `plot(iris)`：對整個資料框畫散佈圖矩陣，快速掃描變數間關係。
+
+分組摘要也常搭配長條圖：
+
+```{r base-tapply, eval=FALSE}
+length.means <- tapply(iris$Sepal.Length, iris$Species, mean)  # 各品種平均花萼長
+barplot(length.means, xlab = "Species", ylab = "Mean of Sepal.Length")
+```
+
+## `ggplot2` 繪圖文法 {#ggplot2}
+
+`ggplot2` 以**圖層文法（grammar of graphics）**組圖：先指定資料與**美學對應（aesthetic mapping）**`aes()`，再用 `+` 疊加**幾何物件（geom）**。基本語法：
+
+```
+ggplot(data, aes(x, y)) +
+  geom_point()      # 散佈圖
+  geom_line()       # 線圖
+  geom_histogram()  # 直方圖
+  geom_boxplot()    # 盒鬚圖
+  geom_bar()        # 長條圖
+```
+
+### 散佈圖與直方圖
+
+```{r ggplot-scatter}
+library(tidyverse)
+
+iris %>%
+  ggplot(aes(x = Sepal.Length, y = Sepal.Width,
+             color = Species, shape = Species)) +
+  geom_point()
+```
+
+**逐行說明：**
+
+* `aes(x = ..., y = ...)`：把 `Sepal.Length` 對應到 x 軸、`Sepal.Width` 對應到 y 軸。
+* `color = Species, shape = Species`：再把品種對應到**顏色與形狀**——這就是「美學對應」的威力，一行讓第三個變數也進到圖裡。
+* `geom_point()`：以「點」這個幾何物件呈現，於是得到分品種著色的散佈圖。
+
+```{r ggplot-hist}
+ggplot(iris, aes(x = Sepal.Length, color = Species, fill = Species)) +
+  geom_histogram(bins = 10)
+```
+
+* `bins = 10`：把資料範圍切成 10 個分箱；`fill` 控制長條內部顏色、`color` 控制邊框顏色。
+
+### 相關性視覺化
+
+```{r ggplot-corr, eval=FALSE}
+library(corrplot)
+corr <- cor(iris[, 1:4])          # 四個數值變數的相關係數矩陣
+corrplot(corr, method = "circle") # 以圓圈大小/顏色表示相關強弱
+```
+
+* `cor(iris[,1:4])`：計算相關矩陣（只取數值欄）。`corrplot()` 把矩陣畫成圓圈圖，一眼看出哪些變數高度相關——這對後續建模（避免共線性）很重要。
+
+## 課堂實作：銷售資料的完整 EDA {#ch5-lab}
+
+課堂檔 `Lec5.2 example r codes.R` 用一份銷售資料 `salesdata.csv` 走一遍完整 EDA。變數包括：`Store`（通路 A/B）、`Product`（101–106 六種商品）、`Client`（10 位顧客）、`UnitPrice`（單價，單位千）、`Quantity`（數量）、`Region`（國別）。
+
+### 讀檔與型別轉換
+
+```{r lab5-read, eval=FALSE}
+saledata <- read.csv("salesdata.csv", sep = ",")
+str(saledata)                              # 先檢查各欄型別
+
+saledata$Product <- as.factor(saledata$Product)   # 商品編號是類別，轉成因子
+saledata$Client  <- as.factor(saledata$Client)    # 顧客編號同理
+```
+
+* `Product`、`Client` 雖然是數字，但意義上是**類別**（商品代號、顧客代號），必須用 `as.factor()` 轉成因子，否則 R 會誤當成連續數值去算平均、畫錯圖。
+
+### 建立衍生變數並分組視覺化
+
+```{r lab5-spend, eval=FALSE}
+saledata <- saledata %>%
+  mutate(Spend = UnitPrice * Quantity)     # 消費金額 = 單價 × 數量
+
+# 各顧客在不同通路的消費分佈（盒鬚圖，依通路著色）
+saledata %>%
+  ggplot(aes(x = Client, y = Spend, fill = Store)) +
+  geom_boxplot() +
+  labs(title = "Plot of Client's expenditure",
+       x = "Client ID", y = "Total Amount (in thousand)") +
+  theme_classic()
+```
+
+* `mutate(Spend = UnitPrice * Quantity)`：先算出每筆交易的消費金額，作為後續分析主軸。
+* `fill = Store` 讓每位顧客的盒鬚圖再依通路（A/B）分色，同時看「顧客」與「通路」兩個維度。
+* `theme_classic()`：套用簡潔的主題樣式。
+
+### 顧客消費力排序
+
+```{r lab5-rank, eval=FALSE}
+TotalSales <- saledata %>%
+  group_by(Client) %>%
+  summarise(TotalSpend = sum(Spend)) %>%   # 每位顧客的總消費
+  arrange(desc(TotalSpend))                # 由大到小
+
+TotalSales %>%
+  ggplot(aes(x = Client, y = TotalSpend, fill = Client)) +
+  geom_bar(stat = "identity") +
+  scale_x_discrete(limits = TotalSales$Client)  # 讓 x 軸依總消費排序呈現
+```
+
+* 這段是典型的「彙總 → 排序 → 長條圖」流程：`group_by + summarise` 算出每人總消費，`arrange(desc())` 排序，`scale_x_discrete(limits = ...)` 讓長條圖依排序後的順序排列。
+
+### 堆疊長條圖加上百分比標籤
+
+```{r lab5-stack, eval=FALSE}
+Product <- saledata %>%
+  group_by(Client, Product) %>%
+  summarise(AmountSpend = sum(Spend)) %>%
+  mutate(Proportion = round(AmountSpend / sum(AmountSpend), 1) * 100)
+
+ggplot(Product, aes(x = Client, y = AmountSpend, fill = Product)) +
+  geom_bar(stat = "identity") +
+  geom_text(aes(label = paste(Proportion, "%", sep = "")),
+            position = position_stack(vjust = 0.5),
+            color = I("white"), size = 3)
+```
+
+* 先算出「每位顧客在每種商品上的消費」與其**佔比**；`geom_bar` 疊成堆疊長條，再用 `geom_text` 把百分比標在每一段中央（`position_stack(vjust = 0.5)`）。這種圖能同時回答「誰買最多」與「各自買了什麼比例的商品」。
+
+## 小結 {#ch5-summary}
+
+EDA 是建模前不可跳過的一步。選圖的第一原則是看**變數的數量與型別**。R 內建繪圖快速方便，適合探索；`ggplot2` 以圖層文法組圖，能優雅地把多個變數（顏色、形狀、分面）納入同一張圖，適合正式報告。實務上務必先用 `str()` 檢查型別、把類別代號轉成因子，再進行分組彙總與視覺化。
+
+## 課後練習 {#ch5-exercises}
+
+1. 用 `ggplot2` 對 `iris` 畫出各品種 `Petal.Length` 的密度圖（`geom_density`），並用 `fill` 分色、`alpha` 調透明度。
+2. 對 `mtcars` 資料，畫出 `wt`（車重）與 `mpg`（油耗）的散佈圖，並用 `geom_smooth(method = "lm")` 疊上迴歸線。
+3. 以本章的 `saledata`，畫出各商品（Product）的總銷售數量長條圖，並在長條上標註數值。
+4. 說明何時該把一個「數字型」變數轉成因子，並舉一個若不轉換會導致分析錯誤的例子。

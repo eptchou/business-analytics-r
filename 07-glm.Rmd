@@ -1,0 +1,142 @@
+# 廣義線性模型 GLM {#glm}
+
+```{r ch7-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+一般線性迴歸假設反應變數為常態分配。但當反應變數是**二元**（是/否）、**計數**（次數）或其他非常態型態時，就需要**廣義線性模型（Generalized Linear Model, GLM）**。GLM 透過**連結函數（link function）**讓反應變數的平均數與線性預測式相連，並允許反應變數屬於指數族分配。R 用 `glm()` 配適。
+
+## GLM 的三個組成 {#glm-components}
+
+任何 GLM 由三部分構成：
+
+* **隨機成分（random component）**：反應變數的分配（常態、二項、Poisson、Gamma…）。
+* **系統成分（systematic component）**：線性預測式 $\eta=\sum_j x_j\beta_j$。
+* **連結函數（link function）**：$\eta=g(\mu)$，把平均數 $\mu=E(y)$ 與線性預測式連起來。
+
+依反應變數的型態選分配與連結：
+
+| 反應變數 | 分配 | 常用連結 |
+|----------|------|----------|
+| 二元 (0/1) | 二項 Binomial | logit：$\eta=\log\frac{\mu}{1-\mu}$ |
+| 計數 | Poisson（或負二項） | log：$\eta=\log\mu$ |
+| 正偏態連續 | Gamma | log／inverse |
+
+## 邏輯斯迴歸 {#logistic}
+
+當反應變數是二元時，用**邏輯斯迴歸（logistic regression）**建模「事件發生機率」：
+
+$$P(Y_i=1)=\frac{e^{X\beta}}{1+e^{X\beta}}, \qquad \text{logit}(P_i)=\log\frac{P_i}{1-P_i}=X\beta$$
+
+幾個關鍵名詞：**勝算（odds）** $=\frac{p}{1-p}$（發生與不發生的比值）；**勝算比（odds ratio, OR）** 是兩個勝算相除。係數解釋為：$X_1$ 每增加一單位，log-odds 增加 $\beta_1$；取 $e^{\beta_1}$ 即為勝算比。
+
+### 配適與解讀
+
+以 `AER::CreditCard`（1,319 筆信用卡資料）預測是否核卡 `card`：
+
+```{r logit-fit, eval=FALSE}
+library(AER)
+data("CreditCard")
+CreditCard$card <- ifelse(CreditCard$card == "yes", 1, 0)   # 把 yes/no 轉成 1/0
+
+logit_model <- glm(card ~ reports + age + income + owner,
+                   data = CreditCard,
+                   family = binomial(link = "logit"))
+summary(logit_model)
+```
+
+**逐行說明：**
+
+* `ifelse(... == "yes", 1, 0)`：邏輯斯迴歸的反應變數需為 0/1，先做轉換。
+* `family = binomial(link = "logit")`：指定二項分配 + logit 連結，這就是邏輯斯迴歸。
+* `summary()` 的係數是 log-odds 尺度。
+
+```{r logit-or, eval=FALSE}
+exp(cbind(OR = coef(logit_model), confint(logit_model)))   # 勝算比與其信賴區間
+```
+
+* `exp(coef(...))` 把 log-odds 轉成**勝算比**，比較好解釋（例如 OR = 1.2 表示該變數每增一單位，勝算增加 20%）。
+
+### 預測與混淆矩陣
+
+```{r logit-pred, eval=FALSE}
+temp <- predict(logit_model, type = "response")   # type="response" 回傳機率 P(y=1)
+pred <- ifelse(temp > 0.5, 1, 0)                  # 以 0.5 為門檻分類
+table(pred, CreditCard$card)                      # 混淆矩陣：預測 vs 實際
+```
+
+* `type = "response"` 很關鍵：不加它，`predict` 回傳的是 log-odds 而非機率。
+* 以門檻（threshold）把機率轉成 0/1，再用 `table()` 做**混淆矩陣**，對角線是分類正確的筆數。
+
+### 模型評估：ROC 與 AUC
+
+```{r logit-roc, eval=FALSE}
+library(pROC)
+temp <- roc(testd$card, predicted2)   # 以實際值與預測機率建 ROC
+temp$auc                              # 曲線下面積 AUC，越接近 1 越好
+plot(temp)
+```
+
+* **ROC 曲線**描繪不同門檻下「敏感度（真陽率）」對「1−特異度（假陽率）」的變化；**AUC**（曲線下面積）是與門檻無關的整體分類能力指標，常用來比較模型。
+
+## Poisson 迴歸 {#poisson}
+
+當反應變數是**計數**（如信用卡主動使用次數 `active`）時，用 Poisson 迴歸：
+
+$$Y_i\sim \text{Poisson}(\mu),\qquad \log(\mu)=X\beta,\qquad \mu=e^{X\beta}$$
+
+```{r pois-fit, eval=FALSE}
+pmodel <- glm(active ~ reports + age + income + owner,
+              data = CreditCard, family = poisson)
+summary(pmodel)
+exp(coef(pmodel))   # 係數指數化後的解釋
+```
+
+* `family = poisson`：指定 Poisson 分配 + log 連結。
+* 係數解釋：$X_1$ 每增一單位，反應變數期望值變為原本的 $e^{\beta_1}$ 倍。例如 $e^{0.012}\approx1.127$，即增加約 12.7%。
+
+### 過度離散的檢查與處理
+
+Poisson 假設 $Var(y)=E(y)$。實務上常出現 $Var(y)>E(y)$，稱為**過度離散（overdispersion）**：
+
+```{r pois-overdisp, eval=FALSE}
+# 快速檢查：殘差偏差 / 自由度 應接近 1
+deviance(pmodel) / df.residual(pmodel)
+
+library(AER)
+dispersiontest(pmodel)   # 正式檢定；顯著代表有過度離散
+```
+
+* 若比值遠大於 1，代表模型假設不成立，輸出不可信。此時改用 **quasi-Poisson**（`family = quasipoisson`）或**負二項迴歸**（`MASS::glm.nb`）。
+
+### 配適度檢定
+
+```{r pois-gof, eval=FALSE}
+pchisq(deviance(pmodel), df.residual(pmodel), lower.tail = FALSE)
+```
+
+* $H_0$：殘差偏差服從卡方分配（模型配適良好）。p 值很小表示**拒絕** $H_0$，即配適不佳（可能有過度離散）。
+
+### 率與補償項（offset）
+
+當計數是「在不同曝險量下」發生時（如每百萬英里的車禍數），需把**率**轉回計數，並加入 $\log(\text{曝險})$ 作為**補償項（offset）**，其係數被強制為 1：
+
+```{r pois-offset, eval=FALSE}
+library(AER)
+data(Fatalities)
+model1 <- glm(fatal ~ year + offset(log(milestot)),
+              family = poisson, data = Fatalities)
+```
+
+* `offset(log(milestot))`：把行駛總里程的對數當補償項。這讓模型實際在建模「每單位里程的車禍率」，而非單純的車禍數。
+
+## 小結 {#ch7-summary}
+
+GLM 把線性迴歸推廣到非常態反應變數，核心是「分配 + 連結函數」的組合，透過 `glm(..., family = )` 指定。二元反應用 `family = binomial`（邏輯斯迴歸），以勝算比解釋係數、以混淆矩陣與 ROC/AUC 評估；計數反應用 `family = poisson`，係數指數化後解釋，並務必檢查過度離散，必要時改用 quasi-Poisson 或負二項。預測時記得加 `type = "response"` 才會得到機率或期望計數。
+
+## 課後練習 {#ch7-exercises}
+
+1. 用 `ISLR::Smarket`，以 `Lag1`~`Lag5` 與 `Volume` 預測 `Direction`；以 2001–2004 為訓練、2005 為測試，門檻 0.5，計算測試集正確率。
+2. 對上題模型畫 ROC 曲線並報告 AUC。
+3. 用 `ISwR::eba1977`（肺癌計數資料）配適 Poisson 迴歸，並檢查是否有過度離散。
+4. 解釋在什麼情境下需要加入 offset 補償項，並說明為何其係數要固定為 1。

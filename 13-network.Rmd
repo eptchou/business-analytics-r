@@ -1,0 +1,158 @@
+# 社群網路分析 {#network}
+
+```{r ch13-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE, eval = FALSE)
+```
+
+**社群網路分析（Social Network Analysis, SNA）**研究「個體之間的關係結構」。它把資料表示成由**節點（node/vertex）**與**連結（edge/link）**組成的圖（graph），用以分析誰是關鍵人物、有哪些次群體、資訊如何流動。應用包括金融詐欺偵測、客戶行銷分群、推薦系統等。本章介紹網路的表示法與 `statnet`、`igraph` 兩套工具。
+
+## 節點、連結與方向性 {#nodes-edges}
+
+網路的基本元素是**節點**（實體，如人、公司）與**連結**（關係，如轉帳、推文）。依連結是否有方向分為：
+
+* **有向圖（directed）**：起點與終點的區別有意義（如 A 推文給 B）。
+* **無向圖（undirected）**：關係對稱（如兩人是朋友）。
+
+## 兩種表示法 {#representation}
+
+網路資料常用兩種格式：
+
+* **相鄰矩陣（sociomatrix / adjacency matrix）**：一個 n×n 方陣，若節點 A 到 B 有連結，則 `[A, B] = 1`，否則為 0。列是起點、欄是終點。
+* **邊列表（edge list）**：直接記錄每一對關係，第一欄是起點、第二欄是終點。
+
+```{r net-matrix}
+# 相鄰矩陣
+netmat1 <- rbind(c(0,1,1,0,0),
+                 c(0,0,1,1,0),
+                 c(0,1,0,0,0),
+                 c(0,0,0,0,0),
+                 c(0,0,1,0,0))
+
+# 邊列表（同一個網路的另一種寫法）
+netmat2 <- rbind(c(1,2), c(1,3), c(2,3), c(2,4), c(3,2), c(5,3))
+```
+
+* 兩種格式可互相轉換：`as.sociomatrix(net)` 轉成矩陣、`as.matrix(net, matrix.type = "edgelist")` 轉成邊列表。相鄰矩陣適合做矩陣運算，邊列表則省空間、適合稀疏網路。
+
+## 用 statnet 建立與描述網路 {#statnet}
+
+```{r net-statnet}
+library(statnet)
+
+net1 <- as.network(netmat1,
+                   directed = TRUE,          # 有向
+                   loops = FALSE,            # 不允許自我連結
+                   matrix.type = "adjacency")
+network.vertex.names(net1) <- LETTERS[1:5]   # 命名節點 A~E
+summary(net1)
+```
+
+**逐行說明：**
+
+* `as.network(..., matrix.type = "adjacency")`：把相鄰矩陣轉成網路物件。`directed = TRUE` 指定有向、`loops = FALSE` 不允許節點連到自己。
+* `network.vertex.names()`：替節點命名，讓後續圖形好讀。
+
+常用的網路測度：
+
+```{r net-measures}
+network.size(net1)   # 節點數
+gden(net1)           # 密度（實際連結 / 可能連結，反映網路稠密程度）
+components(net1)     # 連通子群數
+gtrans(net1)         # 傳遞性/群聚係數（0~1，衡量「朋友的朋友也是朋友」的程度）
+
+gplot(net1, displaylabels = TRUE)   # 繪製網路圖
+```
+
+* **密度（density）**衡量網路多稠密；**群聚係數（transitivity）**衡量三角關係的緊密程度——這些是描述網路結構的基本指標。
+
+### 節點屬性
+
+可以替節點加上屬性（如性別、年齡），並用來著色或設定大小：
+
+```{r net-attr}
+gender <- c(rep("Female", 3), rep("Male", 2))
+set.vertex.attribute(net1, "Gender", gender)   # 加上「性別」屬性
+
+age <- round(rnorm(5, 20, 3))
+set.vertex.attribute(net1, "Age", age)
+
+# 依性別著色、依年齡設定節點大小
+node_colors <- ifelse(get.vertex.attribute(net1, "Gender") == "Female",
+                      "royalblue", "maroon")
+plot.network(net1, vertex.col = node_colors, vertex.cex = age / 5,
+             displaylabels = TRUE)
+```
+
+* `set.vertex.attribute()` 把變數掛到節點上；繪圖時再把屬性對應到顏色（`vertex.col`）與大小（`vertex.cex`），讓圖形承載更多資訊。
+
+## 用 igraph 分析 {#igraph}
+
+`igraph` 是另一套功能強大的網路套件，常用於中大型網路：
+
+```{r net-igraph}
+library(igraph)
+
+g_adj <- graph.adjacency(netmat1, mode = "directed")   # 由相鄰矩陣建圖
+plot(g_adj)
+
+# 基本查詢
+V(g_adj)      # 節點
+E(g_adj)      # 連結
+degree(g_adj) # 各節點的度數（連結數）
+
+shortest.paths(g_adj)        # 任兩點間的最短路徑長度
+average.path.length(g_adj)   # 平均路徑長度
+```
+
+* `V()`、`E()` 取得節點與連結；`degree()` 算每個節點的連結數（度數），度數高者往往是網路中的關鍵人物。
+* `shortest.paths()`、`average.path.length()` 描述資訊在網路中傳遞的效率。
+
+### 社群偵測
+
+`igraph` 可自動找出網路中的**社群（community）**——內部連結緊密、彼此較疏的次群體：
+
+```{r net-community}
+ceb <- cluster_edge_betweenness(net)   # 以邊介數法偵測社群
+plot(ceb, net)                          # 把不同社群著不同色
+```
+
+* `cluster_edge_betweenness()` 逐步移除「介於不同群之間」的邊，把網路切成社群。這對應到行銷上的「找出小圈圈」、詐欺偵測的「找出可疑集團」。
+
+## 課堂實作：PTT 推文網路 {#ch13-lab}
+
+課堂檔用 PTT 論壇的「作者 → 推文者」關係建立網路，找出有影響力的使用者。核心是把「推文行為」整理成帶權重的邊列表：
+
+```{r lab14-ptt}
+library(dplyr)
+# d 的欄位：V1 = 被推文的作者, V2 = 推文者
+edge2 <- d %>%
+  group_by(V1, V2) %>%
+  summarise(weight = n())              # 每一對關係出現幾次 = 權重
+
+edge2 <- data.frame(from = edge2$V2,   # 推文者
+                    to   = edge2$V1,   # 被推文者
+                    weight = edge2$weight)
+
+g <- graph.data.frame(edge2, directed = TRUE)   # 由資料框建有向圖
+
+V(g)$size  <- strength(g)                        # 以強度（加權度數）代表重要性
+V(g)$label <- ifelse(strength(g) >= 10, V(g)$name, NA)  # 只標註重要節點
+plot(g, edge.arrow.size = .5, vertex.label.color = "black")
+```
+
+**逐行說明：**
+
+* `group_by(V1, V2) %>% summarise(weight = n())`：把重複的互動聚合成一條帶權重的邊——同兩人互動越多次，連結越粗。
+* `graph.data.frame(edge2, directed = TRUE)`：直接由「from-to-weight」的資料框建圖，是最實用的建圖方式。
+* `strength(g)`：加權度數（把連結權重也算進去），用來衡量節點重要性；只替重要節點加標籤（`ifelse(... >= 10, name, NA)`），避免圖太雜亂。
+
+## 小結 {#ch13-summary}
+
+社群網路把資料表示成「節點 + 連結」的圖，可用**相鄰矩陣**或**邊列表**儲存，兩者可互轉。`statnet` 與 `igraph` 提供建圖、計算網路測度（密度、群聚係數、度數、最短路徑）、加節點屬性、社群偵測與視覺化的完整工具。分析重點通常是：找出**關鍵節點**（高度數/高強度）、**次群體**（社群偵測）、以及**資訊流動**（路徑），並把這些結構轉化為業務洞察，如鎖定意見領袖、偵測可疑集團。
+
+## 課後練習 {#ch13-exercises}
+
+1. 用本章的 `netmat1` 建立有向網路，計算各節點的入度與出度，找出「最多人指向」的節點。
+2. 用 `igraphdata::UKfaculty` 資料，畫出網路並用社群偵測找出教職員的次群體。
+3. 比較同一份關係資料以相鄰矩陣與邊列表建圖的結果是否一致。
+4. 對一份帶權重的互動資料建圖，用節點強度找出前 5 位關鍵人物並解釋其意義。

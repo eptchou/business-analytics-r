@@ -1,0 +1,28 @@
+book_filename: "business-analytics-r"
+output_dir: "_book"
+new_session: true
+language:
+  label:
+    fig: "圖 "
+    tab: "表 "
+  ui:
+    chapter_name: "第 "
+    appendix_name: "附錄 "
+delete_merged_file: true
+rmd_files:
+  - "index.Rmd"
+  - "01-r-basics.Rmd"
+  - "02-tidyverse.Rmd"
+  - "03-functions.Rmd"
+  - "04-probability.Rmd"
+  - "05-visualization.Rmd"
+  - "06-regression.Rmd"
+  - "07-glm.Rmd"
+  - "08-resampling.Rmd"
+  - "09-unsupervised.Rmd"
+  - "10-supervised.Rmd"
+  - "11-dimension-reduction.Rmd"
+  - "12-text-mining.Rmd"
+  - "13-network.Rmd"
+  - "14-abtest.Rmd"
+  - "15-overview.Rmd"

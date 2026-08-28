@@ -1,0 +1,126 @@
+# 監督式學習：分類 {#supervised}
+
+```{r ch10-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE)
+```
+
+**監督式學習**用「有標籤」的訓練資料學習「特徵 → 標籤」的對應關係，再對新資料預測。本章介紹幾種常用的分類演算法：K 最近鄰、決策樹、隨機森林與集成方法、支持向量機，並以 `iris` 為例貫穿。所有模型都遵循相同流程：**切分訓練/測試 → 用訓練集配適 → 用測試集評估（混淆矩陣）**。
+
+```{r sup-split, eval=FALSE}
+library(datasets); data(iris)
+
+trainI <- sample(1:150, 75)     # 隨機抽一半當訓練
+traind <- iris[trainI, ]
+testd  <- iris[-trainI, ]
+```
+
+## K 最近鄰 KNN {#knn}
+
+**KNN（K Nearest Neighbor）**是最簡單的分類法：對一個新點，看它周圍最近的 k 個鄰居屬於哪一類最多，就判為該類。$P(Y=j\mid X=x)=\frac{1}{k}\sum I(y_i=j)$。因為以距離為依據，**類別變數需轉虛擬變數、數值變數需標準化**，以免尺度失真。
+
+```{r knn, eval=FALSE}
+library(class)
+pred <- knn(train = traind[, 1:4], test = testd[, 1:4],
+            cl = traind[, 5], k = 6)
+table(real = testd[, 5], pred)
+```
+
+**逐行說明：**
+
+* `knn(train, test, cl, k)`：`train`／`test` 是特徵，`cl` 是訓練集的類別標籤，`k` 是鄰居數。函數直接回傳測試集的預測類別。
+* KNN 沒有「訓練」階段，預測時才即時計算距離，屬於「懶惰學習（lazy learning）」。
+
+選 k 的方法是掃描一段範圍，取正確率最高者（k 上限通常取訓練樣本數的 20%）：
+
+```{r knn-selectk, eval=FALSE}
+range <- 1:round(0.2 * nrow(traind))
+accuracies <- rep(NA, length(range))
+for (i in range) {
+  p <- knn(traind[, 1:4], testd[, 1:4], cl = traind[, 5], k = i)
+  cm <- table(testd$Species, p)
+  accuracies[i] <- sum(diag(cm)) / sum(cm)   # 正確率 = 對角線和 / 總和
+}
+which.max(accuracies)     # 正確率最高的 k
+```
+
+## 決策樹 {#decision-tree}
+
+**決策樹（decision tree）**用一連串「是非問題」把資料逐步切分，形成樹狀規則。優點是**可同時處理連續與類別變數、不需太多前處理、易於解讀**；缺點是類別太多時錯誤率易升高。切分的好壞用 **Gini 指數**或**交叉熵（cross-entropy）**衡量（新的切分能降低多少不純度/不確定性）。
+
+```{r rpart, eval=FALSE}
+library(rpart); library(rpart.plot)
+
+tree <- rpart(Species ~ ., data = traind, method = "class")  # 分類樹
+pred <- predict(tree, newdata = testd, type = "class")
+table(Real = testd$Species, Predict = pred)
+
+rpart.plot(tree)     # 視覺化決策樹
+```
+
+* `rpart(Y ~ ., method = "class")`：`.` 表示用所有其他變數；`method = "class"` 指定分類樹（連續反應用 `"anova"` 迴歸樹）。
+* `type = "class"` 讓 `predict` 直接回傳類別；`rpart.plot()` 畫出漂亮的樹，每個節點顯示切分規則與分類結果。
+
+## 隨機森林與集成方法 {#ensemble}
+
+單棵決策樹容易過度配適。**集成學習（ensemble）**結合多棵樹來提升穩定與準確度。
+
+**隨機森林（Random Forest）**種植大量決策樹，每棵樹在**列方向（觀察值）與欄方向（變數）**都做 bootstrap 抽樣，最後以多數決決定類別。優點：可平行化、能給出**變數重要性**、以袋外誤差（OOB error）自我評估、對缺失不敏感。
+
+```{r rf, eval=FALSE}
+library(randomForest)
+
+rf <- randomForest(Species ~ ., data = traind, importance = TRUE)
+rf                     # 印出 OOB 誤差與混淆矩陣
+
+importance(rf)         # 各變數的重要性數值
+varImpPlot(rf)         # 視覺化變數重要性
+
+pred <- predict(rf, newdata = testd)
+table(Real = testd$Species, Predict = pred)
+```
+
+**逐行說明：**
+
+* `importance = TRUE`：計算變數重要性。輸出的 **Mean Decrease Accuracy** 表示「移除該變數後準確率下降多少」，**Mean Decrease Gini** 表示該變數對降低不純度的貢獻——兩者都用來判斷變數重要程度。
+* 隨機森林與只在列方向抽樣的 **Bagging** 差別在於：隨機森林**同時在變數方向**也抽樣，讓每棵樹更「不一樣」，降低相關性、提升集成效果。
+
+其他集成方法：
+
+* **Bagging**（`ipred::bagging`）：只在觀察值方向 bootstrap，平行地建多棵樹再投票，能降低不穩定性。
+* **Boosting**（`adabag::boosting`）：樹**依序**建立，每棵樹針對前一棵分錯的樣本加重權重；對噪音敏感。
+* **XGBoost / LightGBM**：以決策樹提升為基礎的高效實作，是競賽與業界常勝的工具（XGBoost 用 level-wise、LightGBM 用 leaf-wise 生長策略）。
+
+## 支持向量機 SVM {#svm}
+
+**支持向量機（SVM）**找一個能把兩類分開、且**邊界間隔（margin）最大**的超平面。透過**核函數（kernel）**可把非線性問題映射到高維空間做線性分割。常用核：linear、polynomial、RBF（高斯徑向基）、sigmoid。
+
+```{r svm, eval=FALSE}
+library(e1071)
+
+s <- svm(Species ~ ., data = traind, probability = TRUE)
+results <- predict(s, testd, probability = TRUE)
+table(Real = testd$Species, Predict = results)
+
+# 調參：找最佳 cost 與 gamma
+svm_tune <- tune(svm, Species ~ ., data = traind,
+                 kernel = "radial",
+                 ranges = list(cost = 10^(-1:2), gamma = c(.5, 1, 2)))
+svm_tune$best.model
+```
+
+**逐行說明：**
+
+* `svm(...)`：預設用 RBF 核。`probability = TRUE` 讓模型可輸出類別機率。
+* **cost（C）**懲罰分錯的程度：C 太大 → 低偏誤高變異（易過度配適）。**gamma** 控制 RBF 核的影響範圍。
+* `tune(...)` 以交叉驗證在 `ranges` 指定的參數網格中搜尋，`best.model` 取出表現最好的組合——這就是**超參數調校（hyperparameter tuning）**。
+
+## 小結 {#ch10-summary}
+
+監督式分類的共同流程是「切分 → 訓練 → 測試評估」。**KNN** 簡單直觀但需標準化、預測慢；**決策樹**易解讀、前處理少，但單棵易過度配適；**隨機森林**以多樹集成大幅提升穩定度並提供變數重要性，是很好的預設選擇；**Boosting／XGBoost／LightGBM** 常有最佳準確度但需調參且對噪音敏感；**SVM** 靠最大間隔與核函數處理非線性，關鍵在 cost 與 gamma 的調校。務必以測試集的混淆矩陣與正確率誠實評估，並善用交叉驗證調參。
+
+## 課後練習 {#ch10-exercises}
+
+1. 對 `iris` 切分訓練/測試，分別用 KNN、決策樹、隨機森林預測，比較三者測試集正確率。
+2. 對 KNN 掃描 k = 1~15，畫出正確率對 k 的折線圖，找出最佳 k。
+3. 用隨機森林對 `iris` 建模，畫變數重要性圖，說明哪些特徵最能區分品種。
+4. 用 `AER::CreditCard`，以本章各模型預測 `card`，並用測試集比較它們的表現。

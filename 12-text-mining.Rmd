@@ -1,0 +1,174 @@
+# 中文文字探勘 {#text-mining}
+
+```{r ch12-setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = "##", collapse = TRUE, message = FALSE, warning = FALSE, eval = FALSE)
+```
+
+文字是最常見的非結構化資料。**文字探勘（text mining）**把文字轉成可分析的數值特徵，再套用前幾章的統計與機器學習方法。中文不像英文有空格分詞，因此第一步就是**斷詞（word segmentation）**。本章示範透過 `reticulate` 呼叫 Python 的 `jieba` 斷詞，再做詞頻分析、文字雲、以及以歌詞為例的分群與 PCA。
+
+> 本章程式碼較依賴外部套件與資料檔，`.Rmd` 中預設 `eval = FALSE`；實作時請在已安裝對應套件與 Python 環境的機器上執行。
+
+## 環境設定：以 reticulate 橋接 Python jieba {#reticulate}
+
+`jieba` 是效果良好的中文斷詞工具（Python 套件）。`reticulate` 讓 R 能直接呼叫 Python：
+
+```{r tm-setup}
+library(tidyverse)
+library(reticulate)
+
+virtualenv_create("r-jieba")            # 建立 Python 虛擬環境
+use_virtualenv("r-jieba", required = TRUE)
+py_install("jieba", pip = TRUE)         # 在該環境安裝 jieba
+
+jieba <- import("jieba")                # 把 Python 的 jieba 匯入成 R 物件
+
+# 包一個方便的斷詞 function
+cut_words <- function(text) {
+  unlist(iterate(jieba$cut(text)))
+}
+```
+
+**逐行說明：**
+
+* `virtualenv_create` / `use_virtualenv`：建立並啟用一個隔離的 Python 環境，避免污染系統。
+* `import("jieba")`：`reticulate` 把 Python 模組載入成 R 可用的物件，之後用 `jieba$函數()` 呼叫。
+* `cut_words()`：`jieba$cut(text)` 回傳的是 Python 迭代器，用 `iterate()` 取出、`unlist()` 攤平成 R 字元向量。
+
+## 斷詞與自訂詞典 {#segmentation}
+
+```{r tm-cut}
+text <- "初極狹，纔通人，復行數十步，豁然開朗，土地平曠..."
+words <- cut_words(text)   # 斷詞
+```
+
+斷詞常會把專有名詞切錯，可**加入自訂詞**讓它們不被拆開：
+
+```{r tm-adddict}
+new_words <- c("大驚", "做食", "外人道", "母親節")
+for (w in new_words) {
+  jieba$add_word(w)        # 逐一加入使用者詞典
+}
+# 也可從檔案批次載入： new_words <- readLines("dict.txt", encoding = "UTF-8")
+```
+
+* `jieba$add_word(w)`：把 `w` 加進斷詞詞典，之後遇到它就會整詞切出，不再拆散。處理特定領域（人名、品牌、術語）時很重要。
+
+## 清理與詞頻統計 {#freq}
+
+斷詞後需**移除空白、標點與停用詞（stop words）**，再統計詞頻：
+
+```{r tm-freq}
+freq_table <- tibble(word = words) %>%
+  filter(!str_detect(word, "^\\s*$")) %>%       # 移除純空白
+  filter(!str_detect(word, "^[[:punct:]]+$")) %>% # 移除純標點
+  count(word, sort = TRUE)                        # 計數並由高到低排序
+freq_table
+```
+
+**逐行說明：**
+
+* `str_detect(word, "^\\s*$")`：用正規表達式偵測「整個字串都是空白」，前面加 `!` 表示保留「不是空白」的。
+* `^[[:punct:]]+$`：偵測「整串都是標點符號」的字串並濾除。
+* `count(word, sort = TRUE)`：等同 `group_by(word) %>% tally()` 再排序，得到詞頻表。
+
+**停用詞**是「的、是、在」等高頻但無資訊的詞，通常從詞典檔載入後濾除：
+
+```{r tm-stopwords}
+stop_words <- readLines("停用詞-繁體中文.txt", encoding = "UTF-8")
+keep_words <- c("你", "我", "他", "她", "愛")            # 想保留的單字
+stop_words <- stop_words[!stop_words %in% keep_words]   # 從停用詞中排除想保留的
+
+all_words_clean <- all_words %>%
+  filter(!word %in% stop_words)                          # 濾掉停用詞
+```
+
+## 文字雲 {#wordcloud}
+
+`wordcloud2` 依詞頻大小排版，是最直觀的呈現：
+
+```{r tm-cloud}
+library(wordcloud2)
+wordcloud2(freq_table, size = 0.3)
+wordcloud2(freq_table, shape = "star", size = 0.3)   # 可指定形狀
+```
+
+* 詞頻越高，字越大。`shape` 可設 `"cardioid"`、`"star"`、`"pentagon"` 等造型。
+
+## 課堂實作：歌詞文字探勘 {#ch12-lab}
+
+課堂檔以 10 首歌詞（`chou2026.dat`）示範完整流程：逐首斷詞 → 清理 → 詞頻 → 文字雲 → 依作詞者比較 → 分群與 PCA。
+
+### 逐首斷詞並保留來源
+
+```{r lab12-map}
+song_names <- c("歌1","歌2","歌3","歌4","歌5","歌6","歌7","歌8","歌9","歌10")
+
+all_words <- map2_df(chou, song_names, ~{
+  words <- cut_words(.x)              # 對每首歌斷詞
+  tibble(song = .y, word = words)     # 記住這些詞來自哪首歌
+})
+```
+
+* `map2_df(chou, song_names, ...)`：`purrr` 的 `map2` 同時走訪「歌詞」與「歌名」兩個清單，`.x` 是歌詞、`.y` 是歌名；`_df` 表示把結果合併成一個資料框。這樣每個詞都標記了來源歌曲。
+
+### 依作詞者比較高頻詞
+
+```{r lab12-writer}
+all_words_clean2 <- all_words_clean %>%
+  mutate(writer = case_when(
+    song %in% c("歌1","歌2","歌3","歌4","歌5","歌6") ~ "方文山",
+    song %in% c("歌7","歌8","歌9","歌10")            ~ "周杰倫"
+  ))
+
+top_words_writer <- all_words_clean2 %>%
+  count(writer, word, sort = TRUE) %>%
+  group_by(writer) %>%
+  slice_max(n, n = 15)                # 各作者取前 15 高頻詞
+
+ggplot(top_words_writer, aes(x = reorder(word, n), y = n, fill = writer)) +
+  geom_col(show.legend = FALSE) +
+  coord_flip() +
+  facet_wrap(~ writer, scales = "free_y")
+```
+
+* `case_when()`：多條件分類，把歌對應到作詞者。
+* `slice_max(n, n = 15)`：每組取詞頻最高的 15 個。
+* `reorder(word, n)` + `coord_flip()`：讓長條依詞頻排序並橫放，`facet_wrap` 把兩位作者並排比較。
+
+### 從文字到分群與 PCA
+
+把清理後的詞轉成**文件–詞矩陣（document-term matrix）**，就能套用前面章節的方法：
+
+```{r lab12-cluster}
+dtm <- all_words_clean %>%
+  count(document = song, word) %>%
+  pivot_wider(names_from = word, values_from = n, values_fill = 0)  # 攤成矩陣
+
+X <- data.matrix(dtm %>% select(-document))
+rownames(X) <- dtm$document
+X_scaled <- scale(X)                     # 標準化
+
+set.seed(123)
+km <- kmeans(X_scaled, centers = 2, nstart = 20)   # 分 2 群
+km$cluster
+
+pca <- prcomp(X_scaled)                  # PCA 降到 2 維以視覺化
+```
+
+**逐行說明：**
+
+* `pivot_wider(...)`：把「長格式」的詞頻攤成「每列一首歌、每欄一個詞」的矩陣，`values_fill = 0` 把沒出現的詞補 0——這就是文字的數值化。
+* 之後就完全是第 9、11 章的技術：標準化 → K-means 分群 → PCA 視覺化。可檢視分群是否對應到不同作詞者風格，把文字探勘與統計學習串成完整故事。
+
+> **中文顯示提醒**：畫圖出現亂碼時，Mac 可用 `Sys.setlocale("LC_ALL", "zh_TW.UTF-8")`，或載入 `showtext` 套件並 `showtext_auto()` 指定中文字型。
+
+## 小結 {#ch12-summary}
+
+中文文字探勘的起點是**斷詞**，本章透過 `reticulate` + `jieba` 完成，並示範以自訂詞典修正切詞、以正規表達式與停用詞清理。清理後統計**詞頻**、畫**文字雲**，並可把文字轉成**文件–詞矩陣**，接上分群、PCA 等統計學習方法。核心觀念是：一旦把非結構化的文字轉成數值特徵，前幾章的所有工具就都能派上用場。
+
+## 課後練習 {#ch12-exercises}
+
+1. 取一段中文新聞，用 `jieba` 斷詞後統計前 20 高頻詞，並畫成文字雲。
+2. 自訂一份詞典（加入至少 5 個專有名詞），比較加入前後的斷詞差異。
+3. 準備一份繁體停用詞表，套用後重新計算詞頻，觀察結果變化。
+4. 蒐集數篇文章，建立文件–詞矩陣後做階層式分群，看主題相近的文章是否被分在一起。
