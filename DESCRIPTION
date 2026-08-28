@@ -7,6 +7,7 @@ Description: Source files and build dependencies for the Business Analytics
 Encoding: UTF-8
 Config/Needs/website:
     bookdown,
+    downlit,
     knitr,
     rmarkdown,
     tidyverse
