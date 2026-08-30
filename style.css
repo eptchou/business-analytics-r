@@ -1,41 +1,97 @@
-/* 商業分析與 R — 自訂樣式 */
+/* 商業分析與 R：柔和霧藍灰配色 */
+
 body {
-  font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
-  font-size: 18px;
+  font-family: "Noto Sans TC", "PingFang TC",
+               "Microsoft JhengHei", sans-serif;
+  color: #34434a;
   line-height: 1.8;
 }
-h1, h2, h3 { font-weight: 700; }
+
+/* 超連結 */
+a {
+  color: #52758a;
+}
+
+a:hover {
+  color: #3d5e70;
+}
+
+/* 左右側欄 */
+.sidebar-book {
+  background-color: #f5f8f9;
+  border-right: 1px solid #dfe8ec;
+}
+
+.sidebar-chapter {
+  background-color: #fafbfb;
+}
+
+.sidebar h1 a,
+#book-toc a,
+#book-on-this-page a {
+  color: #52758a;
+}
+
+/* 標題 */
+h1, h2, h3 {
+  font-weight: 700;
+}
+
 h1 {
-  color: #2c6e9c;
-  font-size: 2.2rem;
+  color: #52758a;
 }
 
 h2 {
-  color: #3f6680;
-  border-bottom: 2px solid #e3edf5;
+  color: #496b7c;
+  border-bottom: 2px solid #dce7ec;
   padding-bottom: 0.3rem;
 }
-/* 程式碼區塊 */
-pre { border-radius: 6px; }
-pre.sourceCode { background: #f6f8fa; border: 1px solid #e1e4e8; }
-code { color: #b0407d; }
 
-/* 逐行說明區塊：以左側色條標示 */
+h3 {
+  color: #5d7480;
+}
+
+/* 程式碼區塊 */
+pre {
+  border-radius: 6px;
+}
+
+pre.sourceCode {
+  background: #f6f8f9;
+  border: 1px solid #dfe7eb;
+}
+
+code {
+  color: #8b6270;
+}
+
+/* 逐行說明區塊 */
 .line-note {
-  background: #f4f9fc;
-  border-left: 4px solid #2c6e9c;
-  padding: .6rem 1rem;
+  background: #f1f6f8;
+  border-left: 4px solid #7898a8;
+  padding: 0.6rem 1rem;
   margin: 1rem 0;
 }
 
 /* 表格 */
-table { border-collapse: collapse; }
-table th { background: #2c6e9c; color: #fff; }
-table th, table td { border: 1px solid #cdd7df; padding: 6px 10px; }
+table {
+  border-collapse: collapse;
+}
 
-/* 提示區塊（blockquote） */
+table th {
+  background: #52758a;
+  color: #ffffff;
+}
+
+table th,
+table td {
+  border: 1px solid #d3dde2;
+  padding: 6px 10px;
+}
+
+/* 提示與引言區塊 */
 blockquote {
-  background: #fff8e6;
-  border-left: 4px solid #f0ad4e;
-  color: #6b5900;
+  background: #faf7f0;
+  border-left: 4px solid #c1a875;
+  color: #645b48;
 }

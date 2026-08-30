@@ -1,6 +1,6 @@
 bookdown::bs4_book:
   theme:
-    primary: "#2c6e9c"
+    primary: "#52758a"
   repo: ~
   css: style.css
   lib_dir: assets
