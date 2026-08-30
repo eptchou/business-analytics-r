@@ -5,7 +5,10 @@ date: "`r Sys.Date()`"
 site: bookdown::bookdown_site
 documentclass: book
 output:
-  bookdown::bs4_book: default
+  bookdown::bs4_book:
+    theme:
+      primary: "#52758a"
+    css: style.css
 description: "一本以 R 語言貫穿的商業分析教科書，涵蓋資料處理、探索式分析、迴歸、機器學習、A/B 測試與資料分析流程。"
 ---
 
