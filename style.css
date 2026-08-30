@@ -1,12 +1,20 @@
 /* 商業分析與 R — 自訂樣式 */
 body {
   font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  font-size: 18px;
   line-height: 1.8;
 }
 h1, h2, h3 { font-weight: 700; }
-h1 { color: #2c6e9c; }
-h2 { border-bottom: 2px solid #e3edf5; padding-bottom: .3rem; }
+h1 {
+  color: #2c6e9c;
+  font-size: 2.2rem;
+}
 
+h2 {
+  color: #3f6680;
+  border-bottom: 2px solid #e3edf5;
+  padding-bottom: 0.3rem;
+}
 /* 程式碼區塊 */
 pre { border-radius: 6px; }
 pre.sourceCode { background: #f6f8fa; border: 1px solid #e1e4e8; }
