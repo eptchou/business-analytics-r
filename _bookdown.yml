@@ -6,7 +6,7 @@ language:
     fig: "圖 "
     tab: "表 "
   ui:
-    chapter_name: "第 "
+    chapter_name: ["第", "章"]
     appendix_name: "附錄 "
 delete_merged_file: true
 rmd_files:
